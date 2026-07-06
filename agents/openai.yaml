@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tool Routing Architecture"
+  short_description: "Route and onboard agent tools."
+  default_prompt: "Use $tool-routing-architecture to build or audit a layered tool-routing and onboarding system."
