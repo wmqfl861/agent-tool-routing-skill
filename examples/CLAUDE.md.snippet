@@ -1,0 +1,45 @@
+## Tool Directory Routing
+
+When a request needs a specialized tool family and the right tool has not
+already been selected, read the `tool-index` skill first. Use it only to choose
+the category, then read the selected category skill.
+
+If the category chooses a complex tool with a tool-specific skill, read that
+skill before using the tool. If the category chooses a simple helper with no
+tool-specific skill, use the helper directly from the category guidance.
+
+Trigger routing for internet research, website reading or scraping, browser
+operation, agent/tool setup, local file or media handling, visual assets,
+structured live data, MCP tool routing, or uncertainty about the correct tool
+family.
+
+Skip routing for primitive actions such as editing files, running known
+commands, running tests, updating plans, simple shell inspection, continuing an
+already selected workflow, or using a concrete tool explicitly named by the
+user.
+
+Do not force every tool call through the directory. Follow project-specific
+code-discovery instructions directly.
+
+## Tool Onboarding Gate
+
+Before installing, enabling, configuring, repairing, updating, or removing any
+tool, MCP server, skill, plugin, CLI, external API integration, API-key-backed
+service, PATH entry, or tool routing rule, read the tool-routing architecture
+skill.
+
+Tool setup is complete only after the capability is classified as A, B, or C and
+routing is updated or explicitly left unchanged.
+
+For A tools, install or create the Layer 2 tool-specific skill first, then wire
+it into the relevant Layer 1 category. If no local Layer 2 skill exists, search
+official GitHub/docs for a maintained skill. If none exists, write one from
+official docs, README, CLI help, MCP schemas, examples, and auth docs.
+
+For B helpers, add concise category guidance and state that no tool-specific
+skill is required. For C primitives or defaults, leave them out of the
+directory.
+
+Do not update Layer 0 unless a new user-intent category is required. Do not
+enable plugins or modify model/provider/API endpoint settings unless explicitly
+asked.

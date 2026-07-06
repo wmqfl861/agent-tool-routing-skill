@@ -1,0 +1,17 @@
+.DS_Store
+Thumbs.db
+
+# Local editor state
+.idea/
+.vscode/
+
+# Local validation or temporary output
+tmp/
+temp/
+*.tmp
+*.log
+
+# Agent/runtime local state
+.codex/
+.claude/
+.zcode/

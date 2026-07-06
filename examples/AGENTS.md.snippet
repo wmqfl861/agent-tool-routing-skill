@@ -1,0 +1,49 @@
+## Tool Directory Routing
+
+When a user request requires a specialized tool family and the correct tool has
+not already been selected, read the `tool-index` skill before calling
+specialized tools. Use `tool-index` only to choose a category. Then read the
+selected category skill.
+
+If the category selects a complex tool with its own skill, read that
+tool-specific skill before calling the tool. If the category selects a simple
+helper with no tool-specific skill, call that helper directly using the category
+skill's inline guidance.
+
+Trigger the directory for internet research, website reading or scraping,
+browser operation, agent/tool setup, local file or media handling, visual asset
+generation, structured live data, MCP tool routing, or uncertainty about which
+specialized tool family applies.
+
+Skip the directory for primitive actions such as applying patches, running known
+commands or tests, updating plans, simple shell inspection, continuing an
+already selected workflow, or using a concrete tool explicitly named by the
+user.
+
+Do not force every tool call through the directory. Existing-project code
+discovery follows the project's code-discovery instructions directly.
+
+## Tool Onboarding Gate
+
+Before installing, enabling, configuring, repairing, updating, or removing any
+tool, MCP server, skill, plugin, CLI, external API integration, API-key-backed
+service, PATH entry, or tool routing rule, read the tool-routing architecture
+skill.
+
+A tool setup task is not complete just because the tool installed or connected.
+Classify the capability as A, B, or C. If routing should change, update the
+tool hierarchy before declaring completion.
+
+For A tools, install or create the Layer 2 tool-specific skill first, then wire
+it into the relevant Layer 1 category. If no local Layer 2 skill exists, search
+the official GitHub repository or official docs for a maintained skill. If none
+exists, write one from official docs, README, CLI help, MCP schemas, examples,
+and authentication docs.
+
+For B helpers, add concise guidance to the relevant Layer 1 category and state
+that no tool-specific skill is required. For C primitives or implicit defaults,
+do not add them to the directory.
+
+Do not update Layer 0 unless a new user-intent category is required. Do not
+enable plugins or modify model/provider/API endpoint settings unless the user
+explicitly asked for that specific change.
