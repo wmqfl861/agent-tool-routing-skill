@@ -5,6 +5,17 @@ verify the active Claude Code config directory on your machine before editing.
 
 ## 1. Install the Skill
 
+One-command install:
+
+```powershell
+.\scripts\install.ps1 -Target claude -AddGlobalRules
+```
+
+The installer backs up existing files and prints a rollback script path. Omit
+`-AddGlobalRules` to install only the skill files. If existing unmarked routing
+and onboarding sections are already present, the installer leaves them unchanged
+instead of appending duplicates.
+
 Typical user-level location:
 
 ```text
@@ -34,6 +45,11 @@ Append the contents of:
 examples/CLAUDE.md.snippet
 ```
 
+Use the single-skill gate when only `tool-routing-architecture` is installed.
+If Claude Code also has a separate `tool-onboarding` skill, point the setup
+gate at `tool-onboarding`; that skill should delegate to this architecture
+skill for A/B/C classification and layer rules.
+
 The snippet is a routing-only baseline. Add local safety rules separately, such
 as MCP server bans, model/provider/API endpoint change restrictions, and
 temporary-directory policy.
@@ -48,6 +64,15 @@ Do not enable plugins, MCP servers, or provider settings just because a skill
 mentions them. Enabling a tool is a separate setup action.
 
 ## 4. Validate
+
+Run file-based checks first:
+
+```powershell
+Test-Path "$env:USERPROFILE\.claude\skills\tool-routing-architecture\SKILL.md"
+Test-Path "$env:USERPROFILE\.claude\skills\tool-routing-architecture\agents\openai.yaml"
+Select-String -Path "$env:USERPROFILE\.claude\skills\tool-routing-architecture\SKILL.md" -Pattern "^name: tool-routing-architecture$"
+Select-String -Path "$env:USERPROFILE\.claude\CLAUDE.md" -Pattern "Tool Directory Routing"
+```
 
 Restart Claude Code or start a new session, then ask:
 

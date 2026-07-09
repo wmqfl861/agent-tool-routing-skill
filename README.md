@@ -13,6 +13,8 @@ routing hierarchy.
   agent reads when designing, installing, auditing, or repairing a tool-routing
   architecture.
 - `agents/openai.yaml`: display metadata for OpenAI/Codex skill UIs.
+- `scripts/install.ps1`: one-command installer for Codex, Claude Code, zcode,
+  or all three.
 - `docs/`: human-facing installation, architecture, and maintenance guides.
 - `examples/`: copyable instruction snippets and sample skill files.
 
@@ -39,26 +41,72 @@ New tool installs must be classified as A/B/C before setup is considered done.
 Clone or download this repository, then install the skill directory into the
 agent's skill location.
 
+One-command install for all three agents:
+
+```powershell
+.\scripts\install.ps1 -Target all -AddGlobalRules
+```
+
+Install one agent only:
+
+```powershell
+.\scripts\install.ps1 -Target codex -AddGlobalRules
+.\scripts\install.ps1 -Target claude -AddGlobalRules
+.\scripts\install.ps1 -Target zcode -AddGlobalRules
+```
+
+The installer backs up existing skill folders and global instruction files,
+then prints a rollback script path. Omit `-AddGlobalRules` if you want to copy
+the skill only and edit `AGENTS.md` or `CLAUDE.md` yourself. If an existing
+global file already contains unmarked `Tool Directory Routing` and
+`Tool Onboarding Gate` sections, the installer leaves those sections unchanged
+instead of appending duplicates.
+
 For Codex:
 
 ```powershell
+function Convert-CodexRoutingText {
+  param([string]$Content)
+  $updated = [regex]::Replace(
+    $Content,
+    '(?m)^name:\s*tool-routing-architecture\s*$',
+    'name: tool-use-architecture'
+  )
+  $updated = $updated.Replace('$tool-routing-architecture', '$tool-use-architecture')
+  $updated = $updated.Replace(
+    'Use this single-skill gate when only `tool-routing-architecture` is installed.',
+    'Use this single-skill gate when only `tool-use-architecture` is installed.'
+  )
+  $updated = $updated.Replace(
+    'read the tool-routing architecture skill',
+    'read the tool-use-architecture skill'
+  )
+  return $updated
+}
+
+function Set-Utf8NoBom {
+  param([string]$Path, [string]$Content)
+  $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
+  [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
 $skills = "$env:USERPROFILE\.codex\skills"
 $target = "$skills\tool-use-architecture"
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
 Copy-Item -Recurse -Force ".\agents" "$target\agents"
 
-$skill = Get-Content "$target\SKILL.md" -Raw
-$skill.Replace('name: tool-routing-architecture', 'name: tool-use-architecture') |
-  Set-Content "$target\SKILL.md" -Encoding UTF8
+Convert-CodexRoutingText (Get-Content "$target\SKILL.md" -Raw) |
+  ForEach-Object { Set-Utf8NoBom "$target\SKILL.md" $_ }
 
-$metadata = Get-Content "$target\agents\openai.yaml" -Raw
-$metadata.Replace('$tool-routing-architecture', '$tool-use-architecture') |
-  Set-Content "$target\agents\openai.yaml" -Encoding UTF8
+Convert-CodexRoutingText (Get-Content "$target\agents\openai.yaml" -Raw) |
+  ForEach-Object { Set-Utf8NoBom "$target\agents\openai.yaml" $_ }
 ```
 
-Then add the global routing and onboarding snippets from
-[`examples/AGENTS.md.snippet`](examples/AGENTS.md.snippet) to:
+The manual Codex flow must transform both the installed skill name and the
+global snippet from `tool-routing-architecture` to `tool-use-architecture`.
+The one-command installer does this automatically. For manual global rules,
+use the marker-managed flow in [Install for Codex](docs/install-codex.md).
 
 ```text
 %USERPROFILE%\.codex\AGENTS.md

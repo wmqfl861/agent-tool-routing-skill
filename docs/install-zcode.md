@@ -4,6 +4,17 @@ This guide adapts the skill for zcode.
 
 ## 1. Install the Skill
 
+One-command install:
+
+```powershell
+.\scripts\install.ps1 -Target zcode -AddGlobalRules
+```
+
+The installer backs up existing files and prints a rollback script path. Omit
+`-AddGlobalRules` to install only the skill files. If existing unmarked routing
+and onboarding sections are already present, the installer leaves them unchanged
+instead of appending duplicates.
+
 Typical user-level location:
 
 ```text
@@ -33,6 +44,15 @@ Append the contents of:
 examples/AGENTS.md.snippet
 ```
 
+Use the single-skill gate when only `tool-routing-architecture` is installed.
+If zcode also has a separate `tool-onboarding` skill, point the setup gate at
+`tool-onboarding`; that skill should delegate to this architecture skill for
+A/B/C classification and layer rules.
+
+If zcode has a startup or workflow skill such as `using-superpowers`, obey that
+startup workflow first. Then use the routing rule when a specialized tool
+family needs selection.
+
 The snippet is a routing-only baseline. Add local safety rules separately, such
 as MCP server bans, model/provider/API endpoint change restrictions, and
 temporary-directory policy.
@@ -49,7 +69,16 @@ temporary-directory policy.
 
 ## 4. Validate
 
-If the zcode CLI is available:
+Run file-based checks first:
+
+```powershell
+Test-Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\SKILL.md"
+Test-Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\agents\openai.yaml"
+Select-String -Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\SKILL.md" -Pattern "^name: tool-routing-architecture$"
+Select-String -Path "$env:USERPROFILE\.zcode\AGENTS.md" -Pattern "Tool Directory Routing"
+```
+
+If the zcode CLI supports these commands, run them as optional health checks:
 
 ```powershell
 zcode skills list --json
