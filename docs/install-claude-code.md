@@ -34,6 +34,10 @@ Append the contents of:
 examples/CLAUDE.md.snippet
 ```
 
+The snippet is a routing-only baseline. Add local safety rules separately, such
+as MCP server bans, model/provider/API endpoint change restrictions, and
+temporary-directory policy.
+
 ## 3. Adapt Tool Names
 
 Claude Code may expose different native tool names or MCP naming conventions

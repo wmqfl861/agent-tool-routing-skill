@@ -29,6 +29,22 @@ When editing README or docs:
 - avoid assuming all agents expose identical tool names;
 - keep examples generic enough to adapt.
 
+## Gate Patterns
+
+Use the single-skill gate when an agent installs only `tool-routing-architecture`.
+In that pattern, global instructions tell the agent to read this architecture
+skill directly before tool setup changes.
+
+Use the two-tier gate when an agent also has a separate `tool-onboarding` skill.
+In that pattern, global instructions point to `tool-onboarding`, and
+`tool-onboarding` delegates to the architecture skill for A/B/C classification
+and layer rules. This keeps lifecycle checklists close to the setup workflow and
+keeps the architecture skill focused.
+
+Examples use placeholder categories and tools. Replace them with the installed
+agent's actual skills, commands, MCP server names, and tool paths before
+deploying a live hierarchy.
+
 ## Versioning
 
 This repository does not need a package version unless it is distributed through

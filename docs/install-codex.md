@@ -9,10 +9,18 @@ From this repository root:
 
 ```powershell
 $skills = "$env:USERPROFILE\.codex\skills"
-$target = "$skills\tool-routing-architecture"
+$target = "$skills\tool-use-architecture"
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
 Copy-Item -Recurse -Force ".\agents" "$target\agents"
+
+$skill = Get-Content "$target\SKILL.md" -Raw
+$skill.Replace('name: tool-routing-architecture', 'name: tool-use-architecture') |
+  Set-Content "$target\SKILL.md" -Encoding UTF8
+
+$metadata = Get-Content "$target\agents\openai.yaml" -Raw
+$metadata.Replace('$tool-routing-architecture', '$tool-use-architecture') |
+  Set-Content "$target\agents\openai.yaml" -Encoding UTF8
 ```
 
 ## 2. Add Global Routing Rules
@@ -31,6 +39,10 @@ examples/AGENTS.md.snippet
 
 Keep the snippet short. Do not copy all of `SKILL.md` into `AGENTS.md`.
 
+The snippet is a routing-only baseline. Add local safety rules separately, such
+as MCP server bans, model/provider/API endpoint change restrictions, and
+temporary-directory policy.
+
 ## 3. Install or Create Routing Skills
 
 At minimum, a working hierarchy needs:
@@ -47,8 +59,9 @@ names with your actual installed tools.
 Run:
 
 ```powershell
-Test-Path "$env:USERPROFILE\.codex\skills\tool-routing-architecture\SKILL.md"
-Test-Path "$env:USERPROFILE\.codex\skills\tool-routing-architecture\agents\openai.yaml"
+Test-Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\SKILL.md"
+Test-Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\agents\openai.yaml"
+Select-String -Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\SKILL.md" -Pattern "^name: tool-use-architecture$"
 Select-String -Path "$env:USERPROFILE\.codex\AGENTS.md" -Pattern "Tool Directory Routing"
 ```
 
@@ -60,7 +73,7 @@ loaded.
 Ask:
 
 ```text
-Use $tool-routing-architecture to classify a newly installed Firecrawl MCP
+Use $tool-use-architecture to classify a newly installed Firecrawl MCP
 server and decide where it belongs in the hierarchy.
 ```
 

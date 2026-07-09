@@ -33,6 +33,10 @@ Append the contents of:
 examples/AGENTS.md.snippet
 ```
 
+The snippet is a routing-only baseline. Add local safety rules separately, such
+as MCP server bans, model/provider/API endpoint change restrictions, and
+temporary-directory policy.
+
 ## 3. zcode-Specific Safety Notes
 
 - Keep disabled plugins disabled unless the user explicitly asks to enable them.

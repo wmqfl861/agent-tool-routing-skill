@@ -1,7 +1,7 @@
 # Agent Tool Routing Skill
 
-A reusable Codex skill for building a layered tool-routing system for AI coding
-agents. It helps an agent decide when to read tool documentation, how to choose
+A reusable skill for Codex, Claude Code, zcode, and similar AI coding agents.
+It helps an agent decide when to read tool documentation, how to choose
 between overlapping tools, and how newly installed tools should enter the
 routing hierarchy.
 
@@ -43,8 +43,18 @@ For Codex:
 
 ```powershell
 $skills = "$env:USERPROFILE\.codex\skills"
-New-Item -ItemType Directory -Force -Path "$skills\tool-routing-architecture" | Out-Null
-Copy-Item -Recurse -Force ".\SKILL.md", ".\agents" "$skills\tool-routing-architecture\"
+$target = "$skills\tool-use-architecture"
+New-Item -ItemType Directory -Force -Path $target | Out-Null
+Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
+Copy-Item -Recurse -Force ".\agents" "$target\agents"
+
+$skill = Get-Content "$target\SKILL.md" -Raw
+$skill.Replace('name: tool-routing-architecture', 'name: tool-use-architecture') |
+  Set-Content "$target\SKILL.md" -Encoding UTF8
+
+$metadata = Get-Content "$target\agents\openai.yaml" -Raw
+$metadata.Replace('$tool-routing-architecture', '$tool-use-architecture') |
+  Set-Content "$target\agents\openai.yaml" -Encoding UTF8
 ```
 
 Then add the global routing and onboarding snippets from
@@ -70,18 +80,19 @@ After installation, an agent should use this skill when:
 - auditing whether tool instructions are too broad, missing, or duplicated;
 - creating `tool-index`, category skills, or tool-specific skills.
 
-The installed skill name is:
+Common installed skill names are:
 
-```text
-tool-routing-architecture
-```
+- Codex live compatibility install: `tool-use-architecture`
+- Claude Code, zcode, and the generic repository skill: `tool-routing-architecture`
 
 Example user prompt:
 
 ```text
-Use $tool-routing-architecture to add this new Firecrawl MCP server into my
+Use $tool-use-architecture to add this new Firecrawl MCP server into my
 tool-routing hierarchy.
 ```
+
+For Claude Code and zcode, use `$tool-routing-architecture` instead.
 
 ## Architecture Overview
 
@@ -121,6 +132,23 @@ Removal cleanup should:
   references;
 - search for dangling tool names, commands, env vars, paths, and config keys;
 - run a negative route test proving the removed tool is no longer selected.
+
+## Updating This Skill
+
+When this repository changes, update installed copies deliberately:
+
+1. Back up the live agent instructions and skill folders.
+2. Pull the latest repository changes.
+3. Re-copy `SKILL.md` and `agents/` into the installed skill directory.
+4. For Codex compatibility installs, keep the installed folder and frontmatter
+   name as `tool-use-architecture`.
+5. Re-check whether the global snippets changed and merge only the needed
+   routing updates into `AGENTS.md` or `CLAUDE.md`.
+6. Re-run validation and at least one route test.
+
+The snippets in `examples/` are routing-only starting points. Add local safety
+rules such as MCP bans, model/provider change restrictions, and temp-directory
+policies separately before treating a deployment as production-ready.
 
 ## Examples
 

@@ -1,7 +1,7 @@
 ---
 name: tool-routing-architecture
 description: >
-  Design, install, audit, or maintain a Codex tool-routing skill architecture
+  Design, install, audit, or maintain an agent tool-routing skill architecture
   with a global trigger rule, a light tool directory, category skills, and
   tool-specific skills. Use when classifying tools as three-layer tools,
   category-only helpers, or implicit primitives; writing tool-index/category/tool
@@ -12,7 +12,7 @@ description: >
 
 # Tool Routing Architecture
 
-Use this skill to build or maintain a tool-selection system for Codex agents.
+Use this skill to build or maintain a tool-selection system for agents.
 The system should let agents choose tools on their own without making every
 simple task slower.
 
@@ -24,8 +24,9 @@ The architecture has four parts:
 4. Layer 2, tool-specific skills, explain how to use complex tools safely.
 
 Tool setup has one extra gate: when an agent installs, enables, configures,
-repairs, updates, or removes a tool, the setup is not complete until the tool is
-classified and either wired into this hierarchy or explicitly left out.
+repairs, updates, removes, disables, or replaces a tool, the setup is not
+complete until the tool is classified and either wired into this hierarchy or
+explicitly left out.
 
 Do not put every native agent tool into this architecture. Primitive actions and
 implicit defaults should stay implicit.
