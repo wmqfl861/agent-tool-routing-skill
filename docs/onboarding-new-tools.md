@@ -1,12 +1,12 @@
-# Onboarding New Tools
+# Tool Lifecycle
 
-This guide explains how a newly installed tool enters the routing architecture.
+This guide explains how tools enter, change, and leave the routing architecture.
 It is the human-facing companion to the "Tool Onboarding Gate" in `SKILL.md`.
 
 ## Completion Rule
 
-A tool setup task is not complete just because the tool installed, connected, or
-appeared in a tool list.
+A tool lifecycle task is not complete just because the tool installed,
+connected, appeared in a tool list, was disabled, or was deleted.
 
 Setup is complete only after:
 
@@ -118,6 +118,32 @@ For C capabilities:
 1. Leave the directory unchanged.
 2. Mention the reason only if needed to prevent repeated mistaken additions.
 
+## Offboard Removed Tools
+
+Removing, disabling, or replacing a tool requires reverse cleanup. The task is
+not complete when the binary, MCP server, plugin, API key, or skill folder is
+removed.
+
+Action:
+
+1. Identify every public name for the removed capability: tool name, command,
+   MCP server name, plugin id, skill folder, env var, config key, docs path, and
+   replacement tool if any.
+2. Remove the tool from every Layer 1 category that routes to it.
+3. Delete or archive the Layer 2 tool-specific skill when no remaining route
+   uses it.
+4. Remove tool-specific mentions from Layer 0, global instructions, README,
+   docs, examples, current decision lists, and MCP/plugin/CLI/API/PATH config
+   unless the mention is intentionally historical.
+5. If another tool replaces it, update the affected Layer 1 category with the
+   new tool choice and escalation path.
+6. Search the affected skill roots and config files for dangling references to
+   the removed tool's names, commands, env vars, paths, and config keys.
+7. State whether credentials, browser profiles, caches, or local data were
+   removed, kept, or require user action.
+8. Run a negative route test showing a future agent will not select the removed
+   tool.
+
 ## Validation Checklist
 
 - `SKILL.md` frontmatter exists.
@@ -125,6 +151,9 @@ For C capabilities:
 - Layer 1 paths point to existing Layer 2 skills for every A tool.
 - B helpers explicitly say no tool-specific skill is required.
 - C capabilities are not accidentally added to Layer 0.
+- Removed tools have no dangling Layer 0, Layer 1, Layer 2, global-rule,
+  README, docs, examples, MCP/plugin/CLI/API/PATH, or current decision list
+  references.
 - MCP, CLI, plugin, PATH, or API health checks pass when applicable.
 - Disabled plugins remain disabled unless explicitly approved.
 - Model/provider/API endpoint settings were not changed unless explicitly
@@ -151,3 +180,20 @@ Routing:
 - Layer 2 skill: `crawl4ai-official`.
 - Layer 0 change: none, because website reading/extraction already exists as a
   user-intent category.
+
+## Example Removal
+
+Removed tool: `old-crawler-mcp`.
+
+Classification before removal: A.
+
+Cleanup:
+
+- remove `old-crawler-mcp` from `read-and-extract-websites`;
+- delete or archive `old-crawler-mcp/SKILL.md` if no routes use it;
+- remove MCP server config and any API/env var documentation;
+- update replacement guidance to `firecrawl-mcp`, `scrapling-official`, or
+  `crawl4ai-official` as appropriate;
+- search for `old-crawler-mcp`, its command name, server name, env vars, and
+  skill path;
+- run a negative route test confirming scraping requests no longer select it.

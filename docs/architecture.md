@@ -163,3 +163,20 @@ handled:
 8. Validate paths, frontmatter, routing, and health checks.
 
 See [Onboarding New Tools](onboarding-new-tools.md) for the detailed checklist.
+
+## Removed Tool Flow
+
+When removing, disabling, or replacing a tool, reverse the routing work:
+
+1. Identify all public names for the capability: tool name, command, MCP server,
+   plugin id, skill folder, env var, config key, and docs path.
+2. Remove Layer 1 category routes that select the tool.
+3. Delete or archive the Layer 2 skill if no remaining route uses it.
+4. Update replacement guidance when another tool now owns those tasks.
+5. Remove tool-specific references from Layer 0, global instructions, README,
+   docs, examples, current decision lists, and MCP/plugin/CLI/API/PATH config.
+6. Search for dangling references.
+7. Run a negative route test proving the removed tool is no longer selected.
+
+Removing the executable, MCP server, plugin, or API key without cleaning the
+routing hierarchy is incomplete.

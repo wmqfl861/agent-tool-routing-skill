@@ -104,7 +104,23 @@ Every new capability is classified before it is wired into the hierarchy:
 - **B**: simple category-only helper. Mention it inside one category skill.
 - **C**: primitive/default capability. Keep it out of the directory.
 
-Read [Onboarding New Tools](docs/onboarding-new-tools.md) for the exact process.
+Read [Tool Lifecycle](docs/onboarding-new-tools.md) for the exact process.
+
+## Removing Tools
+
+Deleting a binary, MCP server, plugin, API key, or skill folder is not enough.
+Removing, disabling, or replacing a tool is complete only after the routing
+hierarchy no longer points to the removed capability.
+
+Removal cleanup should:
+
+- remove Layer 1 routes to the tool;
+- delete or archive unused Layer 2 tool skills;
+- update replacement guidance;
+- clean global instructions, README, docs, examples, and MCP/plugin/CLI/API/PATH
+  references;
+- search for dangling tool names, commands, env vars, paths, and config keys;
+- run a negative route test proving the removed tool is no longer selected.
 
 ## Examples
 
@@ -138,6 +154,8 @@ installed skill directory as well.
   CLI help, MCP schemas, examples, auth notes, and failure modes.
 - Do not silently enable plugins or change model/provider/API endpoint settings
   while onboarding a tool.
+- Do not remove a tool without also removing dangling route, skill, docs,
+  examples, and config references.
 
 ## License
 

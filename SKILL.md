@@ -71,7 +71,8 @@ Keep global instructions small. Put routing detail in skills, not in
 ## Required Tool Onboarding Gate
 
 Add a second short rule to the same global instructions. This rule makes newly
-installed tools enter the routing architecture automatically.
+installed tools enter the routing architecture automatically and makes removed
+tools leave it cleanly.
 
 Use this text as the baseline:
 
@@ -96,6 +97,11 @@ and authentication docs.
 For B helpers, add concise guidance to the relevant Layer 1 category and state
 that no tool-specific skill is required. For C primitives or implicit defaults,
 do not add them to the directory.
+
+When removing, disabling, or replacing a tool, remove its Layer 1 routes, delete
+or archive its Layer 2 skill when unused, update replacements, clean global
+rules/docs/examples/config references, and search for dangling references before
+declaring completion.
 
 Do not update Layer 0 unless a new user-intent category is required. Do not
 enable plugins or modify model/provider/API endpoint settings unless the user
@@ -178,24 +184,39 @@ are done.
    - keep it out of `tool-index`
    - avoid creating a Layer 2 skill
    - add a short note only if future agents are likely to misclassify it
-9. Update Layer 0 only when the new capability introduces a new user-intent
+9. If the task removes, disables, or replaces a tool:
+   - remove the tool from every Layer 1 category that routes to it
+   - delete or archive the Layer 2 tool skill when no remaining route uses it
+   - remove tool-specific mentions from Layer 0, global instructions, examples,
+     docs, README, MCP/plugin/CLI/API/PATH config, and current decision lists
+     unless the mention is intentionally historical
+   - update replacement guidance if another tool now handles those tasks
+   - search affected roots for the removed tool name, command, MCP server name,
+     skill path, plugin id, env var, and docs path
+   - state whether credentials, browser profiles, caches, or local data were
+     left in place or removed
+10. Update Layer 0 only when the new capability introduces a new user-intent
    category. Do not add vendor/tool names to Layer 0.
-10. Validate:
+11. Validate:
     - `SKILL.md` frontmatter exists and names match folder names
     - Layer 1 paths point to existing Layer 2 skills for every `A` tool
     - `B` helpers explicitly say no tool-specific skill is required
     - `C` capabilities are not accidentally added to Layer 0
+    - removed tools have no dangling Layer 0, Layer 1, Layer 2, global-rule,
+      MCP/plugin/CLI/API/PATH, README, docs, or examples references
     - MCP/CLI/plugin/API health checks pass where applicable
     - secrets are not printed and are not stored in the wrong config file
     - disabled plugins remain disabled unless the user explicitly enabled them
     - model/provider/API endpoint settings were not changed unless requested
     - rollback instructions are concrete
-11. Run a route test that proves the new capability is reachable through the
-    expected layer path and that Layer 0 was not changed unnecessarily.
-12. In the final response, report:
+12. Run a route test that proves the new capability is reachable through the
+    expected layer path and that Layer 0 was not changed unnecessarily. For
+    removals, run a negative route test proving the removed tool is no longer
+    selected.
+13. In the final response, report:
     - classification: `A`, `B`, or `C`
     - files/configs changed
-    - where the tool was added, or why it was not added
+    - where the tool was added, removed, replaced, or why routing was unchanged
     - validation result
     - backup and rollback location
 
@@ -232,6 +253,11 @@ it to `find-information`, and keep Layer 0 unchanged.
 
 Example `B`: a direct weather lookup helper. Add a short line to
 `get-live-data` saying no tool-specific skill is required.
+
+Example removal: removing a crawler MCP. Remove its Layer 1 route from
+`read-and-extract-websites`, delete or archive its Layer 2 skill if unused,
+remove MCP config and docs/examples mentions, search for the server name and
+skill path, then run a negative route test that no scraping task selects it.
 
 Example `C`: a project code-discovery graph MCP already mandated by global
 instructions. Keep it out of the directory and follow the project rule directly.
@@ -538,6 +564,12 @@ For architecture-only edits where no tool is being installed or configured:
 5. Run realistic route tests.
 6. Keep rollback instructions concrete.
 
+For removals, do not stop after uninstalling, disabling, or deleting the tool.
+Also remove or update every route, skill pointer, global rule, docs/example
+mention, current decision list entry, MCP/plugin/CLI/API/PATH config, and
+replacement instruction that would make a future agent select the removed tool.
+Search for dangling references before reporting completion.
+
 Do not put backup files, scratch notes, or review documents inside the final
 skill folder that will be installed. Keep installable skill folders clean.
 
@@ -587,6 +619,8 @@ Before calling the architecture complete, verify:
 - A fresh agent knows when to read `tool-index`.
 - A fresh agent knows when to skip `tool-index`.
 - A fresh agent knows that tool setup must pass the Tool Onboarding Gate.
+- A fresh agent knows that tool removal must clean routes and dangling
+  references before completion.
 - Layer 0 routes only to categories.
 - Layer 1 can choose between overlapping tools.
 - Layer 1 gives exact Layer 2 paths for every `A` tool.
@@ -594,6 +628,8 @@ Before calling the architecture complete, verify:
 - Layer 2 exists only for complex tools that need it.
 - `C` primitives stay out of the directory.
 - Newly installed tools are classified as `A`, `B`, or `C` before completion.
+- Removed tools are absent from Layer 1 routes, unused Layer 2 skills, global
+  rules, examples, docs, and config references.
 - Expensive, authenticated, quota-limited, or sensitive tools have safety rules.
 - Source attribution and output validation are specified where relevant.
 - Global instructions are short and do not duplicate the whole architecture.
@@ -614,6 +650,8 @@ Avoid these patterns:
   intent.
 - Installing a tool and declaring success without classification, routing
   updates, validation, and rollback.
+- Removing a tool binary or MCP config while leaving Layer 1, Layer 2, examples,
+  docs, or global rules pointing to it.
 - Embedding raw API keys or bearer tokens into reusable skill docs or final
   answers.
 - Asking the user to choose a tool when category rules are enough.
