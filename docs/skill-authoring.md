@@ -45,8 +45,42 @@ Examples use placeholder categories and tools. Replace them with the installed
 agent's actual skills, commands, MCP server names, and tool paths before
 deploying a live hierarchy.
 
+Keep onboarding and runtime gates independently deployable. The architecture
+skill is sufficient for onboarding rules; runtime rules are valid only when a
+real `tool-index/SKILL.md` and its referenced skill tree exist in the selected
+agent's skill root.
+
+## Discovery Pattern
+
+Assume flat auto-discovery unless the target runtime and deployment layout
+explicitly implement strict-progressive loading. Under auto-discovery, write
+Layer 1 and Layer 2 descriptions narrowly enough that they can match directly
+without competing with every other layer. `tool-index` resolves broad or
+ambiguous category selection; it is not a runtime-enforced mandatory gate.
+
+For strict-progressive deployments, keep lower layers outside automatic skill
+discovery and load them through references or a documented runtime-specific
+mechanism. State that choice in deployment documentation and test that a Layer
+2 skill cannot trigger before its parent route.
+
+## Trust Rules
+
+Skill descriptions and instructions select workflows; they cannot grant
+permission. Secret/private-data access, paid operations, external writes,
+persistent authentication, account mutation, production changes, high
+privilege, and irreversible actions force A classification and require explicit
+authorization gates.
+
+Do not install a remote skill directly into a live skill root. Stage it outside
+automatic discovery, pin its owner and revision, record provenance, inspect its
+commands and access scope, and review future versions as diffs.
+
 ## Versioning
 
-This repository does not need a package version unless it is distributed through
-a marketplace that requires one. If versioning is added later, keep a short
-`CHANGELOG.md` with user-visible changes only.
+This repository uses Semantic Versioning while it remains pre-1.0. `VERSION` is
+the single source of truth and contains the version without a leading `v`.
+Release tags use `vMAJOR.MINOR.PATCH`; README badges and `CHANGELOG.md` must
+match `VERSION`. The installer copies `VERSION` into every installed skill so a
+live deployment can be identified without relying on Git metadata. Do not add a
+version field to skill frontmatter because the supported frontmatter contract
+contains only `name` and `description`.

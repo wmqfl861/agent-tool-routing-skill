@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-validation:
+    name: Repository validation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator dependency
+        run: python -m pip install PyYAML==6.0.2
+      - name: Validate skill metadata, YAML, and links
+        run: python scripts/validate-skill.py
+      - name: Check whitespace errors
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed.' }
+          git show --check --oneline --no-renames HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git show --check failed.' }
+      - name: Verify validation did not modify the repository
+        shell: pwsh
+        run: |
+          $changes = @(git status --porcelain --untracked-files=all)
+          if ($changes.Count -gt 0) {
+            $changes | Write-Output
+            throw 'Validation left repository changes.'
+          }
+
+  markdown:
+    name: Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Markdown
+        run: npx --yes markdownlint-cli2@0.17.2
+
+  pester-windows:
+    name: Pester (${{ matrix.shell }}, Windows)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: ${{ matrix.shell }}
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: Run installer tests
+        shell: ${{ matrix.shell }}
+        env:
+          EXPECTED_TEST_OS: Windows
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+      - name: Check whitespace and tracked-file changes
+        if: always()
+        shell: ${{ matrix.shell }}
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed.' }
+          $changes = @(git status --porcelain --untracked-files=all)
+          if ($changes.Count -gt 0) {
+            $changes | Write-Output
+            throw 'Tests left repository changes.'
+          }
+
+  pester-pwsh:
+    name: Pester (PowerShell 7, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            expected_os: Linux
+          - os: macos-latest
+            expected_os: macOS
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: Run installer tests
+        shell: pwsh
+        env:
+          EXPECTED_TEST_OS: ${{ matrix.expected_os }}
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+      - name: Check whitespace and tracked-file changes
+        if: always()
+        shell: pwsh
+        run: |
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed.' }
+          $changes = @(git status --porcelain --untracked-files=all)
+          if ($changes.Count -gt 0) {
+            $changes | Write-Output
+            throw 'Tests left repository changes.'
+          }

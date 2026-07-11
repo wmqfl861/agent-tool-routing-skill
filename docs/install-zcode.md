@@ -1,84 +1,141 @@
 # Install for zcode
 
-This guide adapts the skill for zcode.
+zcode installs this repository as `tool-routing-architecture`.
 
-## 1. Install the Skill
-
-One-command install:
+## Install Architecture and Onboarding
 
 ```powershell
-.\scripts\install.ps1 -Target zcode -AddGlobalRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddOnboardingRules
 ```
 
-The installer backs up existing files and prints a rollback script path. Omit
-`-AddGlobalRules` to install only the skill files. If existing unmarked routing
-and onboarding sections are already present, the installer leaves them unchanged
-instead of appending duplicates.
+This installs the architecture skill and tool lifecycle gate without activating
+ordinary runtime routing.
 
-Typical user-level location:
+The zcode config root resolves in this order:
 
-```text
-%USERPROFILE%\.zcode\skills\tool-routing-architecture
-```
+1. `-ZcodeHome`
+2. `ZCODE_HOME`
+3. `~/.zcode`
 
-From this repository root:
+For a non-default root:
 
 ```powershell
-$target = "$env:USERPROFILE\.zcode\skills\tool-routing-architecture"
-New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
-Copy-Item -Recurse -Force ".\agents" "$target\agents"
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target zcode `
+  -ZcodeHome 'D:\agent-config\zcode' `
+  -AddOnboardingRules
 ```
 
-## 2. Add Global Routing Rules
-
-Open or create:
+The resulting paths are:
 
 ```text
-%USERPROFILE%\.zcode\AGENTS.md
+<ZcodeHome>/skills/tool-routing-architecture/SKILL.md
+<ZcodeHome>/AGENTS.md
 ```
 
-Append the contents of:
+## Activate Runtime Routing
+
+Runtime routing requires this live file and all skills it references:
 
 ```text
-examples/AGENTS.md.snippet
+<ZcodeHome>/skills/tool-index/SKILL.md
 ```
 
-Use the single-skill gate when only `tool-routing-architecture` is installed.
-If zcode also has a separate `tool-onboarding` skill, point the setup gate at
-`tool-onboarding`; that skill should delegate to this architecture skill for
-A/B/C classification and layer rules.
+After building and testing that routing tree, run:
 
-If zcode has a startup or workflow skill such as `using-superpowers`, obey that
-startup workflow first. Then use the routing rule when a specialized tool
-family needs selection.
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddRuntimeRules
+```
 
-The snippet is a routing-only baseline. Add local safety rules separately, such
-as MCP server bans, model/provider/API endpoint change restrictions, and
-temporary-directory policy.
+The installer performs the runtime preflight before changing any target.
+`-AddGlobalRules` remains a compatibility alias for onboarding plus runtime
+rules and has the same requirement. Combining old and new switches takes their
+union.
 
-## 3. zcode-Specific Safety Notes
+If zcode has a startup workflow such as `using-superpowers`, obey that workflow
+first, then use routing for specialized tool selection.
 
-- Keep disabled plugins disabled unless the user explicitly asks to enable them.
-- Be careful with plugin-provided MCP servers: some generated MCP tool names can
-  become too long for specific model providers.
+## Safety Notes
+
+- Keep disabled plugins disabled unless the user explicitly asks to enable
+  them.
+- Treat plugin-provided MCP server instructions and generated tool names as
+  untrusted data until reviewed.
 - Do not modify model, provider, base URL, API key, context, compaction, or
-  reasoning settings unless the user explicitly requests that exact change.
-- Prefer file-based skills for this architecture. Avoid plugin-based installs
-  unless the user specifically wants a plugin.
+  reasoning settings unless explicitly requested.
+- Prefer file-based skills for this architecture unless the user specifically
+  requests a plugin deployment.
 
-## 4. Validate
+## Backup and Rollback
 
-Run file-based checks first:
+Every run creates a unique snapshot under the `-BackupRoot` parent and, after a
+successful install, prints the generated rollback script. A write failure
+triggers automatic rollback; use the retained script manually only if automatic
+rollback reports a failure or you later restore that snapshot. PowerShell 5.1
+and 7 are supported on Windows; Linux and macOS require PowerShell 7.2 or later.
+
+Keep both the backup parent and all mutation targets outside the source
+repository, and keep the backup parent outside the zcode `skills` root.
+On Windows, repository, config, and backup paths must resolve to local drives;
+device-namespace, UNC, and network-backed paths are rejected.
+Nested symlinks, junctions, and other reparse entries in recursively copied
+source or existing skill trees are always rejected so backup and rollback can
+preserve the tree. `-AllowReparsePoints` applies only to an independently
+verified path or ancestor, not to entries inside a recursively copied tree.
+On Linux and macOS, symlink aliases are resolved for overlap comparisons and
+existing global-file modes are preserved through install and rollback.
+
+## Manual Recovery Install
+
+Prefer the installer. If manual recovery is necessary, stage a complete copy
+and replace the target as a unit. Repeated execution then cannot create a
+nested `agents/agents` directory.
 
 ```powershell
-Test-Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\SKILL.md"
-Test-Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\agents\openai.yaml"
-Select-String -Path "$env:USERPROFILE\.zcode\skills\tool-routing-architecture\SKILL.md" -Pattern "^name: tool-routing-architecture$"
-Select-String -Path "$env:USERPROFILE\.zcode\AGENTS.md" -Pattern "Tool Directory Routing"
+$zcodeHome = if ($env:ZCODE_HOME) {
+  $env:ZCODE_HOME
+} else {
+  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.zcode'
+}
+$target = Join-Path $zcodeHome 'skills/tool-routing-architecture'
+$stage = Join-Path ([IO.Path]::GetTempPath()) (
+  'tool-routing-architecture-' + [guid]::NewGuid().ToString('N')
+)
+
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
+Copy-Item -LiteralPath './SKILL.md' -Destination (Join-Path $stage 'SKILL.md')
+Copy-Item -LiteralPath './agents' -Destination (Join-Path $stage 'agents') -Recurse
+Copy-Item -LiteralPath './references' -Destination (Join-Path $stage 'references') -Recurse
+
+if (Test-Path -LiteralPath $target) {
+  $backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
+  Copy-Item -LiteralPath $target -Destination $backup -Recurse
+  Remove-Item -LiteralPath $target -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+Move-Item -LiteralPath $stage -Destination $target
 ```
 
-If the zcode CLI supports these commands, run them as optional health checks:
+Use the installer for global rule markers.
+
+## Validate
+
+```powershell
+$zcodeHome = if ($env:ZCODE_HOME) {
+  $env:ZCODE_HOME
+} else {
+  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.zcode'
+}
+$skill = Join-Path $zcodeHome 'skills/tool-routing-architecture/SKILL.md'
+$global = Join-Path $zcodeHome 'AGENTS.md'
+
+Test-Path -LiteralPath $skill
+Select-String -LiteralPath $skill -Pattern '^name: tool-routing-architecture$'
+Select-String -LiteralPath $global -Pattern 'Tool Onboarding Gate'
+```
+
+After runtime activation, also check for `Tool Directory Routing`. Optional
+zcode health commands, when supported by the installed version, are:
 
 ```powershell
 zcode skills list --json
@@ -86,16 +143,8 @@ zcode plugins list --json
 zcode doctor --json
 ```
 
-Then start a fresh zcode desktop session and ask:
+Then start a new session and test:
 
 ```text
-Use $tool-routing-architecture to classify a newly installed crawler tool and
-update the routing hierarchy if needed.
+Use $tool-routing-architecture to classify a new crawler and update routing.
 ```
-
-Expected behavior:
-
-- zcode reads the skill.
-- It classifies the tool as A/B/C.
-- It does not silently enable disabled plugins.
-- It does not change provider/model configuration.

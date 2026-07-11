@@ -1,237 +1,339 @@
 # Agent Tool Routing Skill
 
-A reusable skill for Codex, Claude Code, zcode, and similar AI coding agents.
-It helps an agent decide when to read tool documentation, how to choose
-between overlapping tools, and how newly installed tools should enter the
-routing hierarchy.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-中文简介：这是一个给 Codex/Claude Code/zcode 等 agent 使用的工具路由 skill。它把工具说明拆成轻量目录、分类说明和具体工具说明三层，让 agent 在需要时自己判断该读哪个说明、该调用哪个工具，同时避免每次普通操作都变慢。
+[![Version](https://img.shields.io/badge/version-v0.1.0-167D8D)](CHANGELOG.md)
+[![CI](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4B5563)](#platform-support)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2E7D32)](LICENSE)
 
-## What This Repository Contains
+A versioned, cross-platform architecture skill for managing how coding agents
+discover, select, install, update, and retire tools.
 
-- `SKILL.md`: the installable agent skill. This is the source of truth that an
-  agent reads when designing, installing, auditing, or repairing a tool-routing
-  architecture.
-- `agents/openai.yaml`: display metadata for OpenAI/Codex skill UIs.
-- `scripts/install.ps1`: one-command installer for Codex, Claude Code, zcode,
-  or all three.
-- `docs/`: human-facing installation, architecture, and maintenance guides.
-- `examples/`: copyable instruction snippets and sample skill files.
+Agent Tool Routing Skill gives Codex, Claude Code, zcode, and compatible agents
+a maintainable routing model instead of a flat list of overlapping tools. It
+also defines a safety-gated lifecycle for CLIs, MCP servers, plugins, skills,
+API integrations, PATH entries, and other agent capabilities.
 
-## Why Use It
+> Current release: **v0.1.0**. The project remains pre-1.0; review changes
+> before applying them to shared or production agent environments.
 
-Modern agents often receive many tools at once: native shell tools, MCP servers,
-browser controllers, web crawlers, search tools, file converters, image tools,
-and project-specific helpers. If every tool is listed directly in global
-instructions, routing becomes noisy and slow. If nothing is documented, agents
-guess and misuse tools.
+## Why This Project
 
-This project uses a layered model:
+As an agent gains tools, two failure modes become common:
 
-1. **Global rule**: a short trigger in `AGENTS.md` or equivalent.
-2. **Layer 0 directory**: a light `tool-index` skill that chooses a category.
-3. **Layer 1 category skills**: compare tools for one intent family.
-4. **Layer 2 tool skills**: detailed instructions for complex tools.
+- every tool is placed in global instructions, increasing noise and routing
+  ambiguity;
+- tools are installed without durable routing, safety, update, or removal
+  rules, leaving the agent to guess.
 
-Simple primitives stay out of the directory. Complex tools get specific skills.
-New tool installs must be classified as A/B/C before setup is considered done.
+This project addresses both problems with progressive disclosure:
+
+1. a small directory chooses an intent family;
+2. a category skill compares tools within that family;
+3. a tool-specific skill carries complex operational and safety details.
+
+Simple primitives stay out of the directory. Complex or risk-gated tools get
+dedicated instructions. Tool installation and removal are treated as routing
+changes, not only filesystem changes.
+
+## What It Provides
+
+| Capability | Purpose |
+| --- | --- |
+| Layered routing architecture | Separate directory, category, and tool-specific decisions. |
+| Tool lifecycle gate | Classify and review installs, updates, repairs, removals, and replacements. |
+| Risk-based A/B/C classification | Give complex or high-impact tools the safety guidance they require. |
+| Runtime adapters | Support auto-discovery and explicit strict-progressive deployments. |
+| Cross-platform installer | Install for Codex, Claude Code, zcode, or all three. |
+| Transactional recovery | Preflight, snapshot, stage, install, and roll back without reusing backups. |
+| Route-test contract | Verify positive routes, fallbacks, negative routes, and structural integrity. |
+
+## Two Separate Capabilities
+
+The installer deliberately keeps onboarding and runtime behavior independent.
+
+### Architecture and onboarding
+
+Installs this repository's architecture skill and optionally adds a short gate
+for tool installation, configuration, repair, removal, and routing
+maintenance. This mode does not require `tool-index`.
+
+### Runtime routing
+
+Adds global instructions for selecting specialized tools. Enable this only
+after each selected agent has a complete live routing tree, including
+`skills/tool-index/SKILL.md` and every referenced category/tool skill.
+
+Installing this repository does **not** create a production `tool-index`,
+category tree, or tool-specific inventory. Files under `examples/` are
+templates, not a complete deployment.
+
+## Routing Model
+
+| Layer | Responsibility | Typical file |
+| --- | --- | --- |
+| Global rules | Enter onboarding or runtime routing when needed. | `AGENTS.md`, `CLAUDE.md` |
+| Layer 0 | Select an intent family or resolve ambiguity. | `tool-index/SKILL.md` |
+| Layer 1 | Compare tools for one intent family. | `find-information/SKILL.md` |
+| Layer 2 | Explain one complex or risk-gated tool. | `firecrawl-mcp/SKILL.md` |
+
+Most agent runtimes auto-discover all installed skills. That is the default
+mode: Layer 1 and Layer 2 descriptions must be precise enough to match directly,
+while Layer 0 handles category-level ambiguity.
+
+Strict-progressive deployments may expose only Layer 0 and keep lower layers
+behind references or another explicit loading boundary. Treat this as a
+deployment choice; do not mix both modes accidentally.
 
 ## Quick Start
 
-Clone or download this repository, then install the skill directory into the
-agent's skill location.
+### Requirements
 
-One-command install for all three agents:
+- Git or a downloaded repository archive.
+- Windows: Windows PowerShell 5.1 or PowerShell 7.
+- Linux/macOS: PowerShell 7.2 or later (`pwsh`).
+- Python 3 plus PyYAML only when running the repository validator.
+- Pester 5.7.1 only when running the installer test suite.
+
+From the repository root, install the architecture skill and onboarding rules
+for every supported agent:
 
 ```powershell
-.\scripts\install.ps1 -Target all -AddGlobalRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules
 ```
 
 Install one agent only:
 
 ```powershell
-.\scripts\install.ps1 -Target codex -AddGlobalRules
-.\scripts\install.ps1 -Target claude -AddGlobalRules
-.\scripts\install.ps1 -Target zcode -AddGlobalRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddOnboardingRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddOnboardingRules
 ```
 
-The installer backs up existing skill folders and global instruction files,
-then prints a rollback script path. Omit `-AddGlobalRules` if you want to copy
-the skill only and edit `AGENTS.md` or `CLAUDE.md` yourself. If an existing
-global file already contains unmarked `Tool Directory Routing` and
-`Tool Onboarding Gate` sections, the installer leaves those sections unchanged
-instead of appending duplicates.
-
-For Codex:
+After the live routing tree exists, enable runtime rules:
 
 ```powershell
-function Convert-CodexRoutingText {
-  param([string]$Content)
-  $updated = [regex]::Replace(
-    $Content,
-    '(?m)^name:\s*tool-routing-architecture\s*$',
-    'name: tool-use-architecture'
-  )
-  $updated = $updated.Replace('$tool-routing-architecture', '$tool-use-architecture')
-  $updated = $updated.Replace(
-    'Use this single-skill gate when only `tool-routing-architecture` is installed.',
-    'Use this single-skill gate when only `tool-use-architecture` is installed.'
-  )
-  $updated = $updated.Replace(
-    'read the tool-routing architecture skill',
-    'read the tool-use-architecture skill'
-  )
-  return $updated
-}
-
-function Set-Utf8NoBom {
-  param([string]$Path, [string]$Content)
-  $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
-  [System.IO.File]::WriteAllText($Path, $Content, $encoding)
-}
-
-$skills = "$env:USERPROFILE\.codex\skills"
-$target = "$skills\tool-use-architecture"
-New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
-Copy-Item -Recurse -Force ".\agents" "$target\agents"
-
-Convert-CodexRoutingText (Get-Content "$target\SKILL.md" -Raw) |
-  ForEach-Object { Set-Utf8NoBom "$target\SKILL.md" $_ }
-
-Convert-CodexRoutingText (Get-Content "$target\agents\openai.yaml" -Raw) |
-  ForEach-Object { Set-Utf8NoBom "$target\agents\openai.yaml" $_ }
+pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddRuntimeRules
 ```
 
-The manual Codex flow must transform both the installed skill name and the
-global snippet from `tool-routing-architecture` to `tool-use-architecture`.
-The one-command installer does this automatically. For manual global rules,
-use the marker-managed flow in [Install for Codex](docs/install-codex.md).
+Request both rule sets explicitly:
 
-```text
-%USERPROFILE%\.codex\AGENTS.md
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target all `
+  -AddOnboardingRules `
+  -AddRuntimeRules
 ```
 
-For Claude Code and zcode, see:
+`-AddGlobalRules` remains a compatibility alias for both rule sets. Because it
+includes runtime routing, the same `tool-index` preflight applies.
 
-- [Install for Claude Code](docs/install-claude-code.md)
-- [Install for zcode](docs/install-zcode.md)
-- [Install for Codex](docs/install-codex.md)
+Omit all rule switches to install or refresh only the architecture skill. Use
+`-WhatIf` to run complete preflight without creating a snapshot or changing a
+target.
 
-## Agent Usage
+## Configuration Roots
 
-After installation, an agent should use this skill when:
+Each agent root is resolved independently. Explicit parameters take precedence
+over process environment variables, followed by the user-home fallback.
 
-- setting up or repairing a tool-routing hierarchy;
-- deciding whether a tool needs a dedicated skill;
-- adding a new MCP server, CLI, plugin, API service, PATH entry, or skill;
-- auditing whether tool instructions are too broad, missing, or duplicated;
-- creating `tool-index`, category skills, or tool-specific skills.
+| Agent | Explicit parameter | Environment variable | Default |
+| --- | --- | --- | --- |
+| Codex | `-CodexHome` | `CODEX_HOME` | `~/.codex` |
+| Claude Code | `-ClaudeConfigDir` | `CLAUDE_CONFIG_DIR` | `~/.claude` |
+| zcode | `-ZcodeHome` | `ZCODE_HOME` | `~/.zcode` |
 
-Common installed skill names are:
+Example custom root on Windows:
 
-- Codex live compatibility install: `tool-use-architecture`
-- Claude Code, zcode, and the generic repository skill: `tool-routing-architecture`
-
-Example user prompt:
-
-```text
-Use $tool-use-architecture to add this new Firecrawl MCP server into my
-tool-routing hierarchy.
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target codex `
+  -CodexHome 'D:\agent-config\codex' `
+  -AddOnboardingRules
 ```
 
-For Claude Code and zcode, use `$tool-routing-architecture` instead.
+Example custom root on Linux or macOS:
 
-## Architecture Overview
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target codex `
+  -CodexHome (Join-Path $HOME '.config/codex') `
+  -AddOnboardingRules
+```
 
-Read [Architecture](docs/architecture.md) for the full model.
+`-UserProfile` controls only home fallbacks and the default backup parent. A
+non-OS profile requires `-AllowCustomProfile`.
 
-Short version:
+## Platform Support
 
-| Layer | Purpose | Typical file |
-| --- | --- | --- |
-| Global rule | Decide when to enter routing | `AGENTS.md`, `CLAUDE.md` |
-| Layer 0 | Choose a tool category | `tool-index/SKILL.md` |
-| Layer 1 | Compare tools in one category | `find-information/SKILL.md` |
-| Layer 2 | Explain one complex tool | `firecrawl-mcp/SKILL.md` |
+| Platform | Runtime | Path policy | CI coverage |
+| --- | --- | --- | --- |
+| Windows | Windows PowerShell 5.1 and PowerShell 7 | Local drives only; reject UNC, device namespaces, network-backed paths, and unsafe reparse points. | Pester on both shells plus repository validation. |
+| Linux | PowerShell 7.2+ | Resolve symbolic-link aliases; preserve Unix file mode; compare paths case-sensitively. | Pester on `ubuntu-latest` plus repository validation. |
+| macOS | PowerShell 7.2+ | Resolve symbolic-link aliases; preserve Unix file mode; compare conservatively without case. | Pester on `macos-latest` plus repository validation. |
+
+Every Pester job receives an expected platform identity. A job fails if the
+platform-specific branch is not actually running.
+
+## Safe Installation and Rollback
+
+The installer completes all read-only validation before creating a backup or
+touching an agent target.
+
+- Every run creates a unique `install-*` snapshot below `-BackupRoot`.
+- Backup parents cannot overlap the repository, global instructions, or any
+  selected agent's auto-discovered `skills` root.
+- Mutation targets cannot overlap each other or the source checkout.
+- Existing symlinks, junctions, and reparse points are rejected by default.
+- Recursive source and installed-skill trees always reject nested links,
+  including when `-AllowReparsePoints` is used for a verified ancestor.
+- Windows aliases are resolved through native final-path handling.
+- POSIX paths are resolved component by component so symbolic-link aliases
+  cannot bypass containment or overlap checks.
+- Existing instruction-file encoding, BOM, newline style, and supported Unix
+  mode are preserved.
+
+If a later write fails, the installer invokes the generated rollback script.
+Rollback first verifies that every required backup exists. Each backup is then
+copied beside the live target before the current target is displaced and the
+staged restore is moved into place. If both the restore and recovery move fail,
+the error identifies the preserved displaced-data path.
+
+Run a retained rollback manually when required:
+
+```powershell
+pwsh -NoProfile -File /path/to/install-snapshot/rollback.ps1
+```
+
+## Managed Global Rules
+
+Global instruction updates are marker-managed and idempotent.
+
+- Runtime and onboarding sections use separate marker pairs.
+- Legacy combined blocks are migrated without deleting surrounding user text.
+- Unmarked live H2 sections are preserved instead of duplicated.
+- Markers and managed headings inside fenced code are not treated as live
+  rules.
+- Ambiguous indented/list/quote-container fences and headings are rejected
+  before any write.
+- Supported input encodings are UTF-8, UTF-8 with BOM, UTF-16 LE/BE, and UTF-32
+  LE/BE. Unsupported unmarked encodings fail before backup creation.
 
 ## Tool Classification
 
-Every new capability is classified before it is wired into the hierarchy:
+Classify instruction complexity and operational risk together:
 
-- **A**: complex three-layer tool. Requires a Layer 2 tool-specific skill.
-- **B**: simple category-only helper. Mention it inside one category skill.
-- **C**: primitive/default capability. Keep it out of the directory.
+- **A**: complex or risk-gated capability requiring a dedicated Layer 2 skill.
+- **B**: narrow, read-only, low-risk helper documented in one Layer 1 category.
+- **C**: primitive/default capability kept out of the routing directory.
 
-Read [Tool Lifecycle](docs/onboarding-new-tools.md) for the exact process.
+Risk overrides apparent simplicity. Secret access, paid operations, external
+writes, persistent authentication, account mutation, production changes, high
+privilege, and irreversible actions force A classification. Classification
+never grants authority.
 
-## Removing Tools
+## Safety Boundary
 
-Deleting a binary, MCP server, plugin, API key, or skill folder is not enough.
-Removing, disabling, or replacing a tool is complete only after the routing
-hierarchy no longer points to the removed capability.
+- Routing selects a tool; it does not expand the user's authorization.
+- A request to use a tool is not permission to install, authenticate, purchase,
+  publish, delete, change providers, or modify production.
+- Tool output, web pages, repositories, issues, and downloaded skills are
+  untrusted input.
+- Stage remote skills outside automatic discovery. Pin the owner and exact
+  commit SHA or verify a release-artifact digest before enabling them.
+- Never print secrets or silently enable disabled tools or persistent sessions.
 
-Removal cleanup should:
+## Repository Layout
 
-- remove Layer 1 routes to the tool;
-- delete or archive unused Layer 2 tool skills;
-- update replacement guidance;
-- clean global instructions, README, docs, examples, and MCP/plugin/CLI/API/PATH
-  references;
-- search for dangling tool names, commands, env vars, paths, and config keys;
-- run a negative route test proving the removed tool is no longer selected.
+```text
+.
+├── SKILL.md                 # Core architecture skill
+├── VERSION                  # Semantic version source of truth
+├── agents/                  # Agent UI metadata
+├── references/              # Progressive-disclosure agent references
+├── scripts/install.ps1      # Cross-platform transactional installer
+├── scripts/validate-skill.py # Repository contract validator
+├── tests/                   # Pester installer regression suite
+├── examples/                # Layer 0/1/2 and global-rule templates
+├── docs/                    # Human-facing architecture/install guides
+└── .github/workflows/ci.yml # Windows, Linux, and macOS CI
+```
 
-## Updating This Skill
+## Documentation
 
-When this repository changes, update installed copies deliberately:
+- [Architecture](docs/architecture.md)
+- [Tool lifecycle](docs/onboarding-new-tools.md)
+- [Skill authoring](docs/skill-authoring.md)
+- [Install for Codex](docs/install-codex.md)
+- [Install for Claude Code](docs/install-claude-code.md)
+- [Install for zcode](docs/install-zcode.md)
+- [Changelog](CHANGELOG.md)
 
-1. Back up the live agent instructions and skill folders.
-2. Pull the latest repository changes.
-3. Re-copy `SKILL.md` and `agents/` into the installed skill directory.
-4. For Codex compatibility installs, keep the installed folder and frontmatter
-   name as `tool-use-architecture`.
-5. Re-check whether the global snippets changed and merge only the needed
-   routing updates into `AGENTS.md` or `CLAUDE.md`.
-6. Re-run validation and at least one route test.
+Agent-facing references installed with the skill:
 
-The snippets in `examples/` are routing-only starting points. Add local safety
-rules such as MCP bans, model/provider change restrictions, and temp-directory
-policies separately before treating a deployment as production-ready.
+- [Lifecycle and authorization](references/lifecycle.md)
+- [Routing document authoring](references/authoring.md)
+- [Runtime adapters](references/runtime-adapters.md)
+- [Route tests](references/route-tests.md)
 
-## Examples
+## Agent Usage
 
-- [`examples/AGENTS.md.snippet`](examples/AGENTS.md.snippet): global Codex rule.
-- [`examples/CLAUDE.md.snippet`](examples/CLAUDE.md.snippet): global Claude Code rule.
-- [`examples/tool-index.SKILL.md`](examples/tool-index.SKILL.md): sample Layer 0 directory.
-- [`examples/category-skill.example.md`](examples/category-skill.example.md): sample Layer 1 category skill.
-- [`examples/tool-specific-skill.example.md`](examples/tool-specific-skill.example.md): sample Layer 2 tool skill.
+Installed skill names differ for Codex compatibility:
+
+- Codex: `tool-use-architecture`
+- Claude Code, zcode, and repository source: `tool-routing-architecture`
+
+Example prompts:
+
+```text
+Use $tool-use-architecture to classify a newly installed Firecrawl MCP server.
+```
+
+```text
+Use $tool-routing-architecture to audit this agent's tool routing hierarchy.
+```
 
 ## Validation
 
-At minimum, validate:
+Run the repository validator:
 
 ```powershell
-git status --short
-Test-Path .\SKILL.md
-Test-Path .\agents\openai.yaml
-Select-String -Path .\SKILL.md -Pattern '^name: tool-routing-architecture$'
+python -m pip install PyYAML
+python ./scripts/validate-skill.py
 ```
 
-If you have Codex skill validation scripts available, run them against the
-installed skill directory as well.
+Run installer tests with Pester 5.7.1:
 
-## Design Notes
+```powershell
+Import-Module Pester -RequiredVersion 5.7.1
+Invoke-Pester ./tests
+```
 
-- Keep global instructions short.
-- Keep native primitives out of the routing tree.
-- Do not force every tool call through the directory.
-- Prefer official tool skills when available.
-- For missing official skills, write concise Layer 2 skills from official docs,
-  CLI help, MCP schemas, examples, auth notes, and failure modes.
-- Do not silently enable plugins or change model/provider/API endpoint settings
-  while onboarding a tool.
-- Do not remove a tool without also removing dangling route, skill, docs,
-  examples, and config references.
+Lint documentation:
+
+```powershell
+npx --yes markdownlint-cli2@0.17.2
+```
+
+CI runs validation on Windows, Ubuntu, and macOS, plus installer tests under
+Windows PowerShell 5.1 and PowerShell 7 on all supported operating systems.
+
+## Versioning
+
+The project follows [Semantic Versioning](https://semver.org/) while remaining
+pre-1.0.
+
+- `VERSION` contains the canonical version without a leading `v`.
+- Git release tags use `vMAJOR.MINOR.PATCH`.
+- The installer copies `VERSION` into every installed skill.
+- User-visible changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## Scope
+
+This repository provides architecture, lifecycle rules, templates, and an
+installer. It does not bundle third-party tools, credentials, API keys, a
+production routing inventory, or permission to perform external actions.
 
 ## License
 

@@ -10,6 +10,8 @@ tmp/
 temp/
 *.tmp
 *.log
+__pycache__/
+*.py[cod]
 
 # Agent/runtime local state
 .codex/

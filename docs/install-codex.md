@@ -1,184 +1,175 @@
 # Install for Codex
 
-This guide installs the `tool-use-architecture` skill for Codex and adds
-the global trigger rules that make the routing hierarchy usable.
+Codex installs this repository under the compatibility name
+`tool-use-architecture`. The installer converts both skill metadata and global
+rule references automatically.
 
-## 1. Install the Skill
+## Install Architecture and Onboarding
 
-One-command install:
-
-```powershell
-.\scripts\install.ps1 -Target codex -AddGlobalRules
-```
-
-The installer backs up existing files and prints a rollback script path. Omit
-`-AddGlobalRules` to install only the skill files. If existing unmarked routing
-and onboarding sections are already present, the installer leaves them unchanged
-instead of appending duplicates.
-
-From this repository root:
+From the repository root:
 
 ```powershell
-function Convert-CodexRoutingText {
-  param([string]$Content)
-  $updated = [regex]::Replace(
-    $Content,
-    '(?m)^name:\s*tool-routing-architecture\s*$',
-    'name: tool-use-architecture'
-  )
-  $updated = $updated.Replace('$tool-routing-architecture', '$tool-use-architecture')
-  $updated = $updated.Replace(
-    'Use this single-skill gate when only `tool-routing-architecture` is installed.',
-    'Use this single-skill gate when only `tool-use-architecture` is installed.'
-  )
-  $updated = $updated.Replace(
-    'read the tool-routing architecture skill',
-    'read the tool-use-architecture skill'
-  )
-  return $updated
-}
-
-function Set-Utf8NoBom {
-  param([string]$Path, [string]$Content)
-  $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
-  [System.IO.File]::WriteAllText($Path, $Content, $encoding)
-}
-
-$skills = "$env:USERPROFILE\.codex\skills"
-$target = "$skills\tool-use-architecture"
-New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item -Force ".\SKILL.md" "$target\SKILL.md"
-Copy-Item -Recurse -Force ".\agents" "$target\agents"
-
-Convert-CodexRoutingText (Get-Content "$target\SKILL.md" -Raw) |
-  ForEach-Object { Set-Utf8NoBom "$target\SKILL.md" $_ }
-
-Convert-CodexRoutingText (Get-Content "$target\agents\openai.yaml" -Raw) |
-  ForEach-Object { Set-Utf8NoBom "$target\agents\openai.yaml" $_ }
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddOnboardingRules
 ```
 
-## 2. Add Global Routing Rules
+This installs the architecture skill and adds only the tool lifecycle gate. It
+does not activate ordinary runtime routing, so it is safe when no `tool-index`
+has been built yet.
 
-Open or create:
+The Codex config root resolves in this order:
+
+1. `-CodexHome`
+2. `CODEX_HOME`
+3. `~/.codex`
+
+For a non-default root:
+
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target codex `
+  -CodexHome 'D:\agent-config\codex' `
+  -AddOnboardingRules
+```
+
+The resulting paths are:
 
 ```text
-%USERPROFILE%\.codex\AGENTS.md
+<CodexHome>/skills/tool-use-architecture/SKILL.md
+<CodexHome>/AGENTS.md
 ```
 
-Append the contents of:
+## Activate Runtime Routing
+
+First create and validate the live routing tree. At minimum, Codex must have:
 
 ```text
-examples/AGENTS.md.snippet
+<CodexHome>/skills/tool-index/SKILL.md
 ```
 
-For manual Codex installs, transform the snippet and write it with markers so
-re-running the command updates the managed block instead of appending
-duplicates:
+It must also have the Layer 1 category skills and any Layer 2 skills referenced
+by that index. The repository's `examples/` files are templates and are not
+installed as a complete routing tree.
+
+Then enable the runtime rule:
 
 ```powershell
-function Convert-CodexRoutingText {
-  param([string]$Content)
-  $updated = [regex]::Replace(
-    $Content,
-    '(?m)^name:\s*tool-routing-architecture\s*$',
-    'name: tool-use-architecture'
-  )
-  $updated = $updated.Replace('$tool-routing-architecture', '$tool-use-architecture')
-  $updated = $updated.Replace(
-    'Use this single-skill gate when only `tool-routing-architecture` is installed.',
-    'Use this single-skill gate when only `tool-use-architecture` is installed.'
-  )
-  $updated = $updated.Replace(
-    'read the tool-routing architecture skill',
-    'read the tool-use-architecture skill'
-  )
-  return $updated
-}
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddRuntimeRules
+```
 
-function Set-Utf8NoBom {
-  param([string]$Path, [string]$Content)
-  $encoding = New-Object System.Text.UTF8Encoding -ArgumentList $false
-  [System.IO.File]::WriteAllText($Path, $Content, $encoding)
-}
+The installer preflights `skills/tool-index/SKILL.md` before changing anything.
+`-AddGlobalRules` is a compatibility alias for onboarding plus runtime rules,
+so it performs the same preflight. Combining old and new switches takes their
+union and is not an error.
 
-$global = "$env:USERPROFILE\.codex\AGENTS.md"
-$start = '<!-- agent-tool-routing-skill:start -->'
-$end = '<!-- agent-tool-routing-skill:end -->'
-$snippet = Convert-CodexRoutingText (Get-Content ".\examples\AGENTS.md.snippet" -Raw)
-$block = "$start`r`n$($snippet.Trim())`r`n$end"
+## Backup and Rollback
 
-$existing = ''
-if (Test-Path $global) {
-  $existing = Get-Content $global -Raw
-}
+Every run creates a unique snapshot below `-BackupRoot` and, after a successful
+install, prints the snapshot and rollback script paths. `-BackupRoot` is a
+parent directory, so repeated runs never merge snapshots. A write failure
+triggers automatic rollback; run the retained `rollback.ps1` manually only if
+automatic rollback reports a failure or you later choose to restore the
+snapshot.
 
-$pattern = '(?s)<!-- agent-tool-routing-skill:start -->.*?<!-- agent-tool-routing-skill:end -->'
-$match = [regex]::Match($existing, $pattern)
-if ($match.Success) {
-  $updated = $existing.Substring(0, $match.Index) +
-    $block +
-    $existing.Substring($match.Index + $match.Length)
-} elseif (
-  $existing -match '(?m)^##\s+Tool Directory Routing\b' -and
-  $existing -match '(?m)^##\s+Tool Onboarding Gate\b'
-) {
-  Write-Warning 'Existing unmarked routing rules found; leaving them unchanged.'
-  $updated = $null
-} elseif ([string]::IsNullOrWhiteSpace($existing)) {
-  $updated = $block + "`r`n"
+Keep both the backup parent and all mutation targets outside the source
+repository, and keep the backup parent outside the Codex `skills` root.
+On Windows, repository, config, and backup paths must resolve to local drives;
+device-namespace, UNC, and network-backed paths are rejected.
+Nested symlinks, junctions, and other reparse entries in recursively copied
+source or existing skill trees are always rejected so backup and rollback can
+preserve the tree. `-AllowReparsePoints` applies only to an independently
+verified path or ancestor, not to entries inside a recursively copied tree.
+On Linux and macOS, symlink aliases are resolved for overlap comparisons and
+existing global-file modes are preserved through install and rollback.
+
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 `
+  -Target codex `
+  -AddOnboardingRules `
+  -BackupRoot 'D:\agent-backups'
+```
+
+Use Windows PowerShell 5.1 or PowerShell 7 on Windows. Linux and macOS require
+PowerShell 7.2 or later.
+
+## Manual Recovery Install
+
+Prefer the installer. It handles encoding, path safety, marker validation,
+Codex naming, backup isolation, and rollback.
+
+If a manual recovery is unavoidable, build a unique staging directory and
+replace the target as a unit. Do not recursively copy `agents/` into an existing
+target because a second run can create `agents/agents/openai.yaml`.
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) {
+  $env:CODEX_HOME
 } else {
-  $updated = $existing.TrimEnd() + "`r`n`r`n" + $block + "`r`n"
+  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex'
+}
+$target = Join-Path $codexHome 'skills/tool-use-architecture'
+$stage = Join-Path ([IO.Path]::GetTempPath()) (
+  'tool-use-architecture-' + [guid]::NewGuid().ToString('N')
+)
+
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
+Copy-Item -LiteralPath './SKILL.md' -Destination (Join-Path $stage 'SKILL.md')
+Copy-Item -LiteralPath './agents' -Destination (Join-Path $stage 'agents') -Recurse
+Copy-Item -LiteralPath './references' -Destination (Join-Path $stage 'references') -Recurse
+
+$utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+foreach ($file in @(
+  (Join-Path $stage 'SKILL.md'),
+  (Join-Path $stage 'agents/openai.yaml')
+)) {
+  $text = [IO.File]::ReadAllText($file)
+  $text = [regex]::Replace(
+    $text,
+    '(?m)^name:\s*tool-routing-architecture\s*$',
+    'name: tool-use-architecture'
+  )
+  $text = $text.Replace('$tool-routing-architecture', '$tool-use-architecture')
+  $text = $text.Replace('`tool-routing-architecture`', '`tool-use-architecture`')
+  [IO.File]::WriteAllText($file, $text, $utf8)
 }
 
-if ($null -ne $updated) {
-  Set-Utf8NoBom $global $updated
+if (Test-Path -LiteralPath $target) {
+  $backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
+  Copy-Item -LiteralPath $target -Destination $backup -Recurse
+  Remove-Item -LiteralPath $target -Recurse -Force
 }
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+Move-Item -LiteralPath $stage -Destination $target
 ```
 
-Keep the snippet short. Do not copy all of `SKILL.md` into `AGENTS.md`.
+Use the installer for global rules. Hand-editing marker blocks risks deleting
+or duplicating existing instructions.
 
-The snippet is a routing-only baseline. Add local safety rules separately, such
-as MCP server bans, model/provider/API endpoint change restrictions, and
-temporary-directory policy.
-
-## 3. Install or Create Routing Skills
-
-At minimum, a working hierarchy needs:
-
-- `tool-index`
-- one or more Layer 1 category skills
-- Layer 2 tool skills for every A-class tool
-
-Use the examples in `examples/` as starting points. Replace placeholder tool
-names with your actual installed tools.
-
-## 4. Validate
-
-Run:
+## Validate
 
 ```powershell
-Test-Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\SKILL.md"
-Test-Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\agents\openai.yaml"
-Select-String -Path "$env:USERPROFILE\.codex\skills\tool-use-architecture\SKILL.md" -Pattern "^name: tool-use-architecture$"
-Select-String -Path "$env:USERPROFILE\.codex\AGENTS.md" -Pattern "Tool Directory Routing"
+$codexHome = if ($env:CODEX_HOME) {
+  $env:CODEX_HOME
+} else {
+  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex'
+}
+$skill = Join-Path $codexHome 'skills/tool-use-architecture/SKILL.md'
+$global = Join-Path $codexHome 'AGENTS.md'
+
+Test-Path -LiteralPath $skill
+Select-String -LiteralPath $skill -Pattern '^name: tool-use-architecture$'
+Select-String -LiteralPath $global -Pattern 'Tool Onboarding Gate'
+Select-String -LiteralPath $global -Pattern 'read `tool-use-architecture`'
 ```
 
-Then restart Codex or start a fresh Codex session so the new skill metadata is
-loaded.
+After runtime activation, also check for `Tool Directory Routing`. Start a new
+Codex session so skill metadata and global instructions are reloaded.
 
-## 5. Test
-
-Ask:
+Test onboarding with:
 
 ```text
-Use $tool-use-architecture to classify a newly installed Firecrawl MCP
-server and decide where it belongs in the hierarchy.
+Use $tool-use-architecture to classify a newly installed Firecrawl MCP server.
 ```
 
-Expected behavior:
-
-- Codex reads this skill.
-- Codex classifies the capability as A/B/C.
-- Codex updates or proposes the correct Layer 1/Layer 2 routing.
-- Codex does not change model/provider/API endpoint settings unless explicitly
-  asked.
+The architecture may choose a route, but it must not install, authenticate,
+enable, or change provider settings unless the user separately authorizes that
+action.
