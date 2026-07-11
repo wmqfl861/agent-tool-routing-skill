@@ -6,6 +6,24 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-07-11
+
+### Fixed / 修复
+
+- Detect dangling symbolic links on Linux and macOS during read-only preflight,
+  before creating a backup snapshot or changing an installation target.
+- Require resolved POSIX symbolic-link targets to exist instead of allowing a
+  broken link to fall through as an ordinary not-yet-created path.
+- Upgrade GitHub Actions checkout steps to the Node.js 24-based v5 runtime.
+- Avoid duplicate release builds by running push CI for branches, while pull
+  requests continue to run independently.
+- Linux 和 macOS 现在会在只读预检阶段识别悬空符号链接，并在创建备份快照或
+  修改安装目标之前拒绝该路径。
+- POSIX 符号链接解析后的最终目标必须存在，不再把悬空链接误判为尚未创建的
+  普通路径。
+- GitHub Actions checkout step 升级到基于 Node.js 24 的 v5 runtime。
+- push CI 仅由分支更新触发，pull request 仍独立运行，避免发布标签产生重复构建。
+
 ## [0.1.1] - 2026-07-11
 
 ### Fixed / 修复
@@ -78,5 +96,6 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.1.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.2
 [0.1.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.1
 [0.1.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.0

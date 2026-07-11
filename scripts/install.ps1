@@ -59,12 +59,39 @@ $OnboardingEnd = '<!-- agent-tool-routing-skill:onboarding:end -->'
 function Test-IsFileSystemLink {
     param([Parameter(Mandatory = $true)][object]$Item)
 
+    $linkTargetProperty = $Item.PSObject.Properties['LinkTarget']
+    if (($null -ne $linkTargetProperty) -and
+        (-not [string]::IsNullOrEmpty([string]$linkTargetProperty.Value))) {
+        return $true
+    }
     if (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         return $true
     }
     $linkTypeProperty = $Item.PSObject.Properties['LinkType']
     return ($null -ne $linkTypeProperty) -and
         (-not [string]::IsNullOrEmpty([string]$linkTypeProperty.Value))
+}
+
+function Get-FileSystemItemIncludingBrokenLink {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (($null -ne $item) -or $IsWindowsPlatform) {
+        return $item
+    }
+
+    # The PowerShell provider returns no item for a dangling POSIX symlink.
+    # FileInfo.LinkTarget uses lstat/readlink semantics and can still identify it.
+    try {
+        $linkItem = [System.IO.FileInfo]::new([System.IO.Path]::GetFullPath($Path))
+        if (-not [string]::IsNullOrEmpty($linkItem.LinkTarget)) {
+            return $linkItem
+        }
+    } catch {
+        throw "Cannot inspect path '$Path' while checking for symbolic links. $($_.Exception.Message)"
+    }
+
+    return $null
 }
 
 function Get-FinalExistingPath {
@@ -82,14 +109,17 @@ function Get-FinalExistingPath {
 
         foreach ($segment in $segments) {
             $next = Join-Path $current $segment
-            $item = Get-Item -LiteralPath $next -Force -ErrorAction Stop
+            $item = Get-FileSystemItemIncludingBrokenLink -Path $next
+            if ($null -eq $item) {
+                throw "Path component '$next' disappeared while validating path '$Path'."
+            }
             if (Test-IsFileSystemLink -Item $item) {
                 try {
                     $resolved = $item.ResolveLinkTarget($true)
                 } catch {
                     throw "Cannot resolve symbolic link '$next' while validating path '$Path'. $($_.Exception.Message)"
                 }
-                if ($null -eq $resolved) {
+                if (($null -eq $resolved) -or (-not $resolved.Exists)) {
                     throw "Cannot resolve symbolic link '$next' while validating path '$Path'."
                 }
                 $current = $resolved.FullName
@@ -212,7 +242,7 @@ function Get-ComparisonPath {
     # comparison-only so reparse checks still inspect the caller's actual path.
     $remaining = New-Object System.Collections.Generic.Stack[string]
     $candidate = $full
-    $candidateItem = Get-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+    $candidateItem = Get-FileSystemItemIncludingBrokenLink -Path $candidate
     while ($null -eq $candidateItem) {
         $leaf = [System.IO.Path]::GetFileName($candidate)
         $parent = [System.IO.Path]::GetDirectoryName($candidate)
@@ -222,7 +252,7 @@ function Get-ComparisonPath {
         }
         $remaining.Push($leaf)
         $candidate = $parent
-        $candidateItem = Get-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+        $candidateItem = Get-FileSystemItemIncludingBrokenLink -Path $candidate
     }
     if ($null -ne $candidateItem) {
         $canonical = Get-FinalExistingPath -Path $candidate
@@ -288,7 +318,7 @@ function Assert-NoExistingReparsePoint {
 
     $candidate = Normalize-RootPath -Path $Path
     while ($candidate) {
-        $item = Get-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+        $item = Get-FileSystemItemIncludingBrokenLink -Path $candidate
         if ($null -ne $item) {
             if (Test-IsFileSystemLink -Item $item) {
                 throw "Refusing $Purpose through existing reparse point '$candidate'. Use -AllowReparsePoints only after verifying the destination."
@@ -310,7 +340,7 @@ function Assert-NoReparsePointTree {
     )
 
     Assert-NoExistingReparsePoint -Path $Path -Purpose $Purpose
-    $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    $rootItem = Get-FileSystemItemIncludingBrokenLink -Path $Path
     if ($null -eq $rootItem) {
         return
     }

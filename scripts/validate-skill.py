@@ -327,6 +327,7 @@ def validate_repository_contract(validation: Validation) -> None:
             ("$VersionSource", "version source validation"),
             ("Copy-Item -LiteralPath $VersionSource", "installed version copy"),
             ("$IsMacOSPlatform", "macOS path-comparison policy"),
+            ("LinkTarget", "broken POSIX symbolic-link detection"),
             ("ResolveLinkTarget", "POSIX symbolic-link canonicalization"),
             ("GetUnixFileMode", "Unix file-mode capture"),
             ("SetUnixFileMode", "Unix file-mode restoration"),

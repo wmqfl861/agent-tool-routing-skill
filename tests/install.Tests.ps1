@@ -906,34 +906,44 @@ Describe 'scripts/install.ps1' {
         Assert-True (Test-Path -LiteralPath (Join-Path $fallbackRoot 'AGENTS.md'))
     }
 
-    It 'rejects a broken POSIX symlink before creating a backup or target' {
+    It 'rejects direct and chained broken POSIX symlinks before writing' {
         if ($script:IsWindowsTest) {
             return
         }
 
-        $layout = New-InstallLayout 'posix-broken-symlink'
-        $missingTarget = Join-Path $layout.Root 'missing-config'
-        $linkRoot = Join-Path $layout.Root 'broken-config'
-        New-Item -ItemType SymbolicLink -Path $linkRoot -Target $missingTarget | Out-Null
-
-        try {
-            $threw = $false
-            try {
-                $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
-                    -CodexHome $linkRoot -BackupRoot $layout.Backup -AddOnboardingRules `
-                    -AllowReparsePoints
-            } catch {
-                $threw = $true
-                $errorMessage = $_.Exception.Message
+        foreach ($caseName in @('direct', 'chained')) {
+            $layout = New-InstallLayout ('posix-broken-symlink-' + $caseName)
+            $missingTarget = Join-Path $layout.Root 'missing-config'
+            $intermediateLink = $null
+            $linkRoot = Join-Path $layout.Root 'broken-config'
+            if ($caseName -eq 'chained') {
+                $intermediateLink = Join-Path $layout.Root 'intermediate-link'
+                New-Item -ItemType SymbolicLink -Path $intermediateLink -Target $missingTarget | Out-Null
+                New-Item -ItemType SymbolicLink -Path $linkRoot -Target $intermediateLink | Out-Null
+            } else {
+                New-Item -ItemType SymbolicLink -Path $linkRoot -Target $missingTarget | Out-Null
             }
 
-            Assert-True $threw
-            Assert-True ($errorMessage.Contains('Cannot resolve symbolic link'))
-            Assert-False (Test-Path -LiteralPath $layout.Backup)
-            Assert-False (Test-Path -LiteralPath $missingTarget)
-        } finally {
-            if ($null -ne (Get-Item -LiteralPath $linkRoot -Force -ErrorAction SilentlyContinue)) {
-                Remove-Item -LiteralPath $linkRoot -Force
+            try {
+                $threw = $false
+                try {
+                    $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                        -CodexHome $linkRoot -BackupRoot $layout.Backup -AddOnboardingRules `
+                        -AllowReparsePoints
+                } catch {
+                    $threw = $true
+                    $errorMessage = $_.Exception.Message
+                }
+
+                Assert-True $threw
+                Assert-True ($errorMessage.Contains('Cannot resolve symbolic link'))
+                Assert-False (Test-Path -LiteralPath $layout.Backup)
+                Assert-False (Test-Path -LiteralPath $missingTarget)
+            } finally {
+                [System.IO.File]::Delete($linkRoot)
+                if ($null -ne $intermediateLink) {
+                    [System.IO.File]::Delete($intermediateLink)
+                }
             }
         }
     }
