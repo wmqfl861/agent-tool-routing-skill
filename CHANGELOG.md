@@ -6,6 +6,21 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-07-11
+
+### Fixed / 修复
+
+- Replaced unsupported `matrix.shell` expressions with explicit Windows
+  PowerShell 5.1 and PowerShell 7 jobs.
+- Added actionlint to CI and the repository contract so GitHub Actions context
+  errors are caught before release.
+- Made every CI Pester job require exactly 38 passing tests, preventing silent
+  test-discovery regressions.
+- 用独立的 Windows PowerShell 5.1 和 PowerShell 7 job 替换 GitHub Actions
+  不支持的 `matrix.shell` 表达式。
+- 在 CI 和仓库契约中加入 actionlint，在发布前发现 GitHub Actions context 错误。
+- 所有 CI Pester job 必须准确通过 38 项测试，防止测试发现数量静默下降。
+
 ## [0.1.0] - 2026-07-11
 
 Initial versioned release. / 首个正式版本化发布。
@@ -20,13 +35,14 @@ Initial versioned release. / 首个正式版本化发布。
   alias for legacy installs.
 - Independent Codex, Claude Code, and zcode configuration-root resolution.
 - Repository validator, Markdown lint configuration, Pester regression suite,
-  and Windows/Linux/macOS GitHub Actions coverage.
+  actionlint, and Windows/Linux/macOS GitHub Actions coverage.
 - Full English and Simplified Chinese repository documentation.
 - Layer 0/1/2 路由架构，并明确区分自动发现与 strict-progressive runtime 模式。
 - 工具生命周期、授权、远程 Skill 来源、编写、适配和路由测试 references。
 - 独立的 onboarding/runtime 全局规则开关，以及旧安装方式的兼容别名。
 - Codex、Claude Code、zcode 各自独立的配置根目录解析。
-- 仓库 validator、Markdown lint、Pester 回归测试以及 Windows/Linux/macOS CI。
+- 仓库 validator、Markdown lint、Pester 回归测试、actionlint，以及
+  Windows/Linux/macOS CI。
 - 完整英文和简体中文仓库说明。
 
 ### Security and reliability / 安全与可靠性
@@ -62,4 +78,5 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.1.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.1
 [0.1.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.0

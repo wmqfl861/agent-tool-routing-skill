@@ -361,12 +361,18 @@ def validate_repository_contract(validation: Validation) -> None:
             "ubuntu-latest",
             "macos-latest",
             "EXPECTED_TEST_OS",
+            "actionlint",
         ):
             if requirement not in ci_text:
                 validation.error(
                     ROOT / ".github" / "workflows" / "ci.yml",
                     f"CI must include cross-platform requirement '{requirement}'",
                 )
+        if re.search(r"(?m)^\s*shell:\s*\$\{\{\s*matrix\.", ci_text):
+            validation.error(
+                ROOT / ".github" / "workflows" / "ci.yml",
+                "GitHub Actions does not allow matrix context in a step shell field",
+            )
 
     snippet_paths = (
         ROOT / "examples" / "AGENTS.md.snippet",
