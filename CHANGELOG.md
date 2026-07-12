@@ -6,6 +6,16 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.5] - 2026-07-12
+
+### Fixed / 修复
+
+- Create a private POSIX temporary directory and download the bootstrap as
+  `install.ps1`, avoiding extensionless `mktemp` files that some `pwsh -File`
+  environments reject.
+- POSIX wrapper 改为创建私有临时目录，并把 bootstrap 下载为 `install.ps1`，避免
+  部分 `pwsh -File` 环境拒绝无扩展名的 `mktemp` 文件。
+
 ## [0.1.4] - 2026-07-12
 
 ### Added / 新增
@@ -171,6 +181,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.1.5]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.5
 [0.1.4]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.4
 [0.1.3]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.3
 [0.1.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.2

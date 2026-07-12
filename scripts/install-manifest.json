@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "wmqfl861/agent-tool-routing-skill",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "files": [
     {
       "path": "SKILL.md",
@@ -10,7 +10,7 @@
     },
     {
       "path": "VERSION",
-      "sha256": "8a3dad16d348c163566a456fcf650d85d7aeeda5e53d01ee1fa8dc15212915a7",
+      "sha256": "800cf1c0392b24de7c0a1c6ea6778ecb433dec71c49a150bce96a98477527b2f",
       "size": 6
     },
     {

@@ -4,7 +4,7 @@ zcode installs this repository as `tool-routing-architecture`.
 
 ## Install Architecture and Onboarding
 
-Choose the one command for your platform. It is pinned to `v0.1.4`, verifies
+Choose the one command for your platform. It is pinned to `v0.1.5`, verifies
 the bootstrap and every payload file before execution, and can run from any
 directory without Git.
 
@@ -14,19 +14,19 @@ supported Windows release that provides `curl.exe`.
 ### Windows
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1';$h='f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
 ```bash
-(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
 ```
 
 ### macOS
 
 ```zsh
-(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
 ```
 
 This installs the architecture skill and tool lifecycle gate without activating

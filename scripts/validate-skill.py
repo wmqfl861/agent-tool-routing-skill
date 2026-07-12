@@ -190,7 +190,8 @@ def build_remote_install_command(
 
     checksum_command = "sha256sum -c -" if platform == "Linux" else "shasum -a 256 -c -"
     return (
-        "(set -eu;umask 077;p=\"$(mktemp)\";trap 'rm -f \"$p\"' EXIT;"
+        "(set -eu;umask 077;d=\"$(mktemp -d)\";p=\"$d/install.ps1\";"
+        "trap 'rm -f \"$p\";rmdir \"$d\"' EXIT;"
         "curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 "
         "--connect-timeout 30 --max-time 60 --limit-rate 128K "
         f"--max-filesize {REMOTE_BOOTSTRAP_MAXIMUM_BYTES} -fsSL '{url}' -o \"$p\";"

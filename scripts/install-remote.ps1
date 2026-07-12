@@ -30,10 +30,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ReleaseVersion = '0.1.4'
+$ReleaseVersion = '0.1.5'
 $Repository = 'wmqfl861/agent-tool-routing-skill'
 $ManifestRelativePath = 'scripts/install-manifest.json'
-$ManifestSha256 = 'ba0eb3f3d17476f9bdddc384de9da2d728fbb368ade40e4180f9ec1a5254bbfd'
+$ManifestSha256 = '7360028f1ae197f4ceedc3f844e4742600d8f424e1000d76eeef970d2fb2663b'
 $RequiredPayloadPaths = @(
     'VERSION',
     'SKILL.md',
