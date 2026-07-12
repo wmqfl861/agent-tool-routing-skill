@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-v0.1.2-167D8D)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.1.3-167D8D)](CHANGELOG.md)
 [![CI](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4B5563)](#platform-support)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2E7D32)](LICENSE)
@@ -15,7 +15,7 @@ a maintainable routing model instead of a flat list of overlapping tools. It
 also defines a safety-gated lifecycle for CLIs, MCP servers, plugins, skills,
 API integrations, PATH entries, and other agent capabilities.
 
-> Current release: **v0.1.2**. The project remains pre-1.0; review changes
+> Current release: **v0.1.3**. The project remains pre-1.0; review changes
 > before applying them to shared or production agent environments.
 
 ## Why This Project
@@ -96,12 +96,56 @@ deployment choice; do not mix both modes accidentally.
 - Python 3 plus PyYAML only when running the repository validator.
 - Pester 5.7.1 only when running the installer test suite.
 
-From the repository root, install the architecture skill and onboarding rules
-for every supported agent:
+Choose the commands for your platform. They clone the repository and install
+the architecture skill plus onboarding rules for every supported agent.
+
+### Windows
+
+Clone the repository and enter its directory:
 
 ```powershell
+git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
+Set-Location .\agent-tool-routing-skill
+```
+
+Run the installer with Windows PowerShell 5.1:
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\install.ps1 -Target all -AddOnboardingRules
+```
+
+Or run it with PowerShell 7:
+
+```powershell
+pwsh -NoProfile -File .\scripts\install.ps1 -Target all -AddOnboardingRules
+```
+
+### Linux
+
+Run in Bash with PowerShell 7.2 or later installed:
+
+```bash
+git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
+cd agent-tool-routing-skill
 pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules
 ```
+
+### macOS
+
+Run in zsh with PowerShell 7.2 or later installed:
+
+```zsh
+git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
+cd agent-tool-routing-skill
+pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules
+```
+
+When using a downloaded archive, enter the extracted repository root and run
+only the final installer command for your platform.
+
+The remaining examples use `pwsh` from the repository root and work on Windows
+with PowerShell 7, Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh`
+with `powershell.exe`.
 
 Install one agent only:
 
@@ -120,10 +164,7 @@ pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddRuntimeRules
 Request both rule sets explicitly:
 
 ```powershell
-pwsh -NoProfile -File ./scripts/install.ps1 `
-  -Target all `
-  -AddOnboardingRules `
-  -AddRuntimeRules
+pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules -AddRuntimeRules
 ```
 
 `-AddGlobalRules` remains a compatibility alias for both rule sets. Because it
@@ -153,12 +194,12 @@ pwsh -NoProfile -File ./scripts/install.ps1 `
   -AddOnboardingRules
 ```
 
-Example custom root on Linux or macOS:
+Example custom root from Bash or zsh on Linux or macOS:
 
-```powershell
-pwsh -NoProfile -File ./scripts/install.ps1 `
-  -Target codex `
-  -CodexHome (Join-Path $HOME '.config/codex') `
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 \
+  -Target codex \
+  -CodexHome "$HOME/.config/codex" \
   -AddOnboardingRules
 ```
 

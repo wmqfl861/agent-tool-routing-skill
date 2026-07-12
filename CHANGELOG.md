@@ -6,6 +6,25 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-07-12
+
+### Changed / 变更
+
+- Add copy-ready Windows, Linux, and macOS installation paths to both README
+  files, including repository cloning and the correct shell for each platform.
+- Distinguish Windows PowerShell 5.1 from PowerShell 7 commands and replace
+  POSIX examples that depended on PowerShell-only continuation or path syntax.
+- Document platform-specific install and custom-root commands in the Codex,
+  Claude Code, and zcode installation guides.
+- Tighten repository validation for release badges, current-version notices,
+  Changelog release links, and the three-platform quick-start contract.
+- 在中英文 README 中加入可直接复制的 Windows、Linux 和 macOS 完整安装流程，
+  包括仓库克隆步骤和各平台对应的 shell。
+- 区分 Windows PowerShell 5.1 与 PowerShell 7 命令，并替换依赖 PowerShell
+  续行符或路径语法的 POSIX 示例。
+- 在 Codex、Claude Code 和 zcode 安装文档中补充各平台安装命令和自定义目录示例。
+- 加强版本徽章、当前版本、Changelog Release 链接和三平台快速开始的仓库校验。
+
 ## [0.1.2] - 2026-07-11
 
 ### Fixed / 修复
@@ -96,6 +115,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.1.3]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.3
 [0.1.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.2
 [0.1.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.1
 [0.1.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.0

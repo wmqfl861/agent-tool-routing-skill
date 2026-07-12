@@ -6,9 +6,35 @@ rule references automatically.
 
 ## Install Architecture and Onboarding
 
-From the repository root:
+From the repository root, choose the command for your platform.
+
+### Windows
+
+Windows PowerShell 5.1:
 
 ```powershell
+powershell.exe -NoProfile -File .\scripts\install.ps1 -Target codex -AddOnboardingRules
+```
+
+PowerShell 7:
+
+```powershell
+pwsh -NoProfile -File .\scripts\install.ps1 -Target codex -AddOnboardingRules
+```
+
+### Linux
+
+PowerShell 7.2 or later from Bash:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddOnboardingRules
+```
+
+### macOS
+
+PowerShell 7.2 or later from zsh:
+
+```zsh
 pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddOnboardingRules
 ```
 
@@ -16,18 +42,31 @@ This installs the architecture skill and adds only the tool lifecycle gate. It
 does not activate ordinary runtime routing, so it is safe when no `tool-index`
 has been built yet.
 
+Subsequent `pwsh` commands use the same syntax with PowerShell 7 on Windows,
+Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh` with
+`powershell.exe`.
+
 The Codex config root resolves in this order:
 
 1. `-CodexHome`
 2. `CODEX_HOME`
 3. `~/.codex`
 
-For a non-default root:
+For a non-default root on Windows:
 
 ```powershell
 pwsh -NoProfile -File ./scripts/install.ps1 `
   -Target codex `
   -CodexHome 'D:\agent-config\codex' `
+  -AddOnboardingRules
+```
+
+For a non-default root from Bash or zsh on Linux or macOS:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 \
+  -Target codex \
+  -CodexHome "$HOME/.config/codex" \
   -AddOnboardingRules
 ```
 
@@ -81,11 +120,22 @@ verified path or ancestor, not to entries inside a recursively copied tree.
 On Linux and macOS, symlink aliases are resolved for overlap comparisons and
 existing global-file modes are preserved through install and rollback.
 
+Windows example:
+
 ```powershell
 pwsh -NoProfile -File ./scripts/install.ps1 `
   -Target codex `
   -AddOnboardingRules `
   -BackupRoot 'D:\agent-backups'
+```
+
+Linux or macOS example from Bash or zsh:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 \
+  -Target codex \
+  -AddOnboardingRules \
+  -BackupRoot "$HOME/agent-backups"
 ```
 
 Use Windows PowerShell 5.1 or PowerShell 7 on Windows. Linux and macOS require

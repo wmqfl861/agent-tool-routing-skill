@@ -4,12 +4,44 @@ Claude Code installs this repository as `tool-routing-architecture`.
 
 ## Install Architecture and Onboarding
 
+From the repository root, choose the command for your platform.
+
+### Windows
+
+Windows PowerShell 5.1:
+
 ```powershell
+powershell.exe -NoProfile -File .\scripts\install.ps1 -Target claude -AddOnboardingRules
+```
+
+PowerShell 7:
+
+```powershell
+pwsh -NoProfile -File .\scripts\install.ps1 -Target claude -AddOnboardingRules
+```
+
+### Linux
+
+PowerShell 7.2 or later from Bash:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
+```
+
+### macOS
+
+PowerShell 7.2 or later from zsh:
+
+```zsh
 pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
 ```
 
 This installs the architecture skill and lifecycle gate without activating
 ordinary runtime routing.
+
+Subsequent `pwsh` commands use the same syntax with PowerShell 7 on Windows,
+Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh` with
+`powershell.exe`.
 
 The Claude Code config root resolves in this order:
 
@@ -17,12 +49,21 @@ The Claude Code config root resolves in this order:
 2. `CLAUDE_CONFIG_DIR`
 3. `~/.claude`
 
-For a non-default root:
+For a non-default root on Windows:
 
 ```powershell
 pwsh -NoProfile -File ./scripts/install.ps1 `
   -Target claude `
   -ClaudeConfigDir 'D:\agent-config\claude' `
+  -AddOnboardingRules
+```
+
+For a non-default root from Bash or zsh on Linux or macOS:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 \
+  -Target claude \
+  -ClaudeConfigDir "$HOME/.config/claude" \
   -AddOnboardingRules
 ```
 

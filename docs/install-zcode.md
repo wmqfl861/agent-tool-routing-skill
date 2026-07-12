@@ -4,12 +4,44 @@ zcode installs this repository as `tool-routing-architecture`.
 
 ## Install Architecture and Onboarding
 
+From the repository root, choose the command for your platform.
+
+### Windows
+
+Windows PowerShell 5.1:
+
 ```powershell
+powershell.exe -NoProfile -File .\scripts\install.ps1 -Target zcode -AddOnboardingRules
+```
+
+PowerShell 7:
+
+```powershell
+pwsh -NoProfile -File .\scripts\install.ps1 -Target zcode -AddOnboardingRules
+```
+
+### Linux
+
+PowerShell 7.2 or later from Bash:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddOnboardingRules
+```
+
+### macOS
+
+PowerShell 7.2 or later from zsh:
+
+```zsh
 pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddOnboardingRules
 ```
 
 This installs the architecture skill and tool lifecycle gate without activating
 ordinary runtime routing.
+
+Subsequent `pwsh` commands use the same syntax with PowerShell 7 on Windows,
+Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh` with
+`powershell.exe`.
 
 The zcode config root resolves in this order:
 
@@ -17,12 +49,21 @@ The zcode config root resolves in this order:
 2. `ZCODE_HOME`
 3. `~/.zcode`
 
-For a non-default root:
+For a non-default root on Windows:
 
 ```powershell
 pwsh -NoProfile -File ./scripts/install.ps1 `
   -Target zcode `
   -ZcodeHome 'D:\agent-config\zcode' `
+  -AddOnboardingRules
+```
+
+For a non-default root from Bash or zsh on Linux or macOS:
+
+```bash
+pwsh -NoProfile -File ./scripts/install.ps1 \
+  -Target zcode \
+  -ZcodeHome "$HOME/.config/zcode" \
   -AddOnboardingRules
 ```
 

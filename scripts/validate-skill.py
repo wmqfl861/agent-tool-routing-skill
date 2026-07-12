@@ -77,6 +77,16 @@ def read_utf8(path: Path, validation: Validation) -> str | None:
         return None
 
 
+def find_markdown_sections(text: str, level: int, heading: str) -> list[str]:
+    marker = "#" * level
+    pattern = re.compile(
+        rf"^{re.escape(marker)}[ \t]+{re.escape(heading)}[ \t]*\r?\n"
+        rf"(.*?)(?=^#{{1,{level}}}[ \t]+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    return [match.group(1) for match in pattern.finditer(text)]
+
+
 def parse_yaml(text: str, path: Path, validation: Validation) -> Any:
     try:
         return yaml.safe_load(text)
@@ -269,18 +279,148 @@ def validate_repository_contract(validation: Validation) -> None:
     if english_readme is not None:
         if "README.zh-CN.md" not in english_readme:
             validation.error(ROOT / "README.md", "must link to the Chinese README")
-        if version is not None and f"v{version}" not in english_readme:
-            validation.error(ROOT / "README.md", f"must display release v{version}")
     if chinese_readme is not None:
         if "README.md" not in chinese_readme:
             validation.error(ROOT / "README.zh-CN.md", "must link to the English README")
-        if version is not None and f"v{version}" not in chinese_readme:
-            validation.error(ROOT / "README.zh-CN.md", f"must display release v{version}")
+
+    if version is not None:
+        expected_badge_prefix = (
+            "[![Version](https://img.shields.io/badge/"
+            f"version-v{version}-"
+        )
+        readme_contracts = (
+            (
+                ROOT / "README.md",
+                english_readme,
+                f"> Current release: **v{version}**.",
+                "Quick Start",
+            ),
+            (
+                ROOT / "README.zh-CN.md",
+                chinese_readme,
+                f"> 当前版本：**v{version}**。",
+                "快速开始",
+            ),
+        )
+        for path, text, expected_notice, quick_start_heading in readme_contracts:
+            if text is None:
+                continue
+            if expected_badge_prefix not in text:
+                validation.error(path, f"must display the v{version} version badge")
+            if expected_notice not in text:
+                validation.error(path, f"must display the current release as v{version}")
+
+            windows_command = (
+                "powershell.exe -NoProfile -File .\\scripts\\install.ps1 "
+                "-Target all -AddOnboardingRules"
+            )
+            windows_pwsh_command = (
+                "pwsh -NoProfile -File .\\scripts\\install.ps1 "
+                "-Target all -AddOnboardingRules"
+            )
+            posix_command = (
+                "pwsh -NoProfile -File ./scripts/install.ps1 "
+                "-Target all -AddOnboardingRules"
+            )
+            clone_command = (
+                "git clone "
+                "https://github.com/wmqfl861/agent-tool-routing-skill.git"
+            )
+            quick_start_contracts = (
+                (
+                    "Windows",
+                    (clone_command, "Set-Location", windows_command, windows_pwsh_command),
+                ),
+                ("Linux", (clone_command, "cd agent-tool-routing-skill", posix_command)),
+                ("macOS", (clone_command, "cd agent-tool-routing-skill", posix_command)),
+            )
+            quick_start_sections = find_markdown_sections(text, 2, quick_start_heading)
+            if len(quick_start_sections) != 1:
+                validation.error(
+                    path,
+                    f"must contain exactly one '## {quick_start_heading}' section",
+                )
+                continue
+            for heading, requirements in quick_start_contracts:
+                sections = find_markdown_sections(quick_start_sections[0], 3, heading)
+                if len(sections) != 1:
+                    validation.error(
+                        path,
+                        f"quick start must contain exactly one '### {heading}' section",
+                    )
+                    continue
+                for requirement in requirements:
+                    if requirement not in sections[0]:
+                        validation.error(
+                            path,
+                            f"quick-start {heading} section is missing: {requirement}",
+                        )
+
+        install_doc_contracts = (
+            (ROOT / "docs" / "install-codex.md", "codex"),
+            (ROOT / "docs" / "install-claude-code.md", "claude"),
+            (ROOT / "docs" / "install-zcode.md", "zcode"),
+        )
+        for path, target in install_doc_contracts:
+            text = read_utf8(path, validation)
+            if text is None:
+                continue
+            install_sections = find_markdown_sections(
+                text,
+                2,
+                "Install Architecture and Onboarding",
+            )
+            if len(install_sections) != 1:
+                validation.error(
+                    path,
+                    "must contain exactly one architecture install section",
+                )
+                continue
+            commands = {
+                "Windows": (
+                    "powershell.exe -NoProfile -File .\\scripts\\install.ps1 "
+                    f"-Target {target} -AddOnboardingRules",
+                    "pwsh -NoProfile -File .\\scripts\\install.ps1 "
+                    f"-Target {target} -AddOnboardingRules",
+                ),
+                "Linux": (
+                    "pwsh -NoProfile -File ./scripts/install.ps1 "
+                    f"-Target {target} -AddOnboardingRules",
+                ),
+                "macOS": (
+                    "pwsh -NoProfile -File ./scripts/install.ps1 "
+                    f"-Target {target} -AddOnboardingRules",
+                ),
+            }
+            for heading, requirements in commands.items():
+                sections = find_markdown_sections(install_sections[0], 3, heading)
+                if len(sections) != 1:
+                    validation.error(
+                        path,
+                        f"must contain exactly one '### {heading}' install section",
+                    )
+                    continue
+                for requirement in requirements:
+                    if requirement not in sections[0]:
+                        validation.error(
+                            path,
+                            f"{heading} install section is missing: {requirement}",
+                        )
+
     if changelog_text is not None and version is not None:
         if f"## [{version}]" not in changelog_text:
             validation.error(
                 ROOT / "CHANGELOG.md",
                 f"must contain a [{version}] release heading",
+            )
+        release_link = (
+            f"[{version}]: https://github.com/wmqfl861/"
+            f"agent-tool-routing-skill/releases/tag/v{version}"
+        )
+        if release_link not in changelog_text:
+            validation.error(
+                ROOT / "CHANGELOG.md",
+                f"must contain the v{version} release link",
             )
 
     skill_text = read_utf8(ROOT / "SKILL.md", validation)
