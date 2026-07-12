@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-v0.1.3-167D8D)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.1.4-167D8D)](CHANGELOG.md)
 [![CI](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4B5563)](#platform-support)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2E7D32)](LICENSE)
@@ -15,7 +15,7 @@ a maintainable routing model instead of a flat list of overlapping tools. It
 also defines a safety-gated lifecycle for CLIs, MCP servers, plugins, skills,
 API integrations, PATH entries, and other agent capabilities.
 
-> Current release: **v0.1.3**. The project remains pre-1.0; review changes
+> Current release: **v0.1.4**. The project remains pre-1.0; review changes
 > before applying them to shared or production agent environments.
 
 ## Why This Project
@@ -90,70 +90,100 @@ deployment choice; do not mix both modes accidentally.
 
 ### Requirements
 
-- Git or a downloaded repository archive.
-- Windows: Windows PowerShell 5.1 or PowerShell 7.
-- Linux/macOS: PowerShell 7.2 or later (`pwsh`).
+- Windows 10 1803+, Windows Server 2019+, or another supported Windows release
+  with Windows PowerShell 5.1 or PowerShell 7, `curl.exe`, and HTTPS access.
+- Linux: Bash, `curl`, `sha256sum`, and PowerShell 7.2 or later (`pwsh`).
+- macOS: zsh, `curl`, `shasum`, and PowerShell 7.2 or later (`pwsh`).
 - Python 3 plus PyYAML only when running the repository validator.
 - Pester 5.7.1 only when running the installer test suite.
 
-Choose the commands for your platform. They clone the repository and install
-the architecture skill plus onboarding rules for every supported agent.
+Choose one command for your operating system and agent. Each command installs
+the architecture skill and onboarding gate for that agent. It can be run from
+any directory and does not require Git.
+
+The commands are pinned to `v0.1.4`. They download the bootstrap to a private
+temporary file, verify its embedded SHA-256 before execution, and then verify a
+bootstrap-anchored manifest plus every runtime payload file before invoking the
+transactional installer. No command pipes unverified network content into a
+shell.
 
 ### Windows
 
-Clone the repository and enter its directory:
+Run in Windows PowerShell 5.1 or PowerShell 7.
+
+#### Codex
 
 ```powershell
-git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
-Set-Location .\agent-tool-routing-skill
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1';$h='f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
-Run the installer with Windows PowerShell 5.1:
+#### Claude Code
 
 ```powershell
-powershell.exe -NoProfile -File .\scripts\install.ps1 -Target all -AddOnboardingRules
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1';$h='f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
-Or run it with PowerShell 7:
+#### zcode
 
 ```powershell
-pwsh -NoProfile -File .\scripts\install.ps1 -Target all -AddOnboardingRules
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1';$h='f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
-Run in Bash with PowerShell 7.2 or later installed:
+Run in Bash.
+
+#### Codex
 
 ```bash
-git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
-cd agent-tool-routing-skill
-pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
+```
+
+#### Claude Code
+
+```bash
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
+```
+
+#### zcode
+
+```bash
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
 ```
 
 ### macOS
 
-Run in zsh with PowerShell 7.2 or later installed:
+Run in zsh.
+
+#### Codex
 
 ```zsh
-git clone https://github.com/wmqfl861/agent-tool-routing-skill.git
-cd agent-tool-routing-skill
-pwsh -NoProfile -File ./scripts/install.ps1 -Target all -AddOnboardingRules
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
 ```
 
-When using a downloaded archive, enter the extracted repository root and run
-only the final installer command for your platform.
+#### Claude Code
 
-The remaining examples use `pwsh` from the repository root and work on Windows
-with PowerShell 7, Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh`
-with `powershell.exe`.
-
-Install one agent only:
-
-```powershell
-pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddOnboardingRules
-pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
-pwsh -NoProfile -File ./scripts/install.ps1 -Target zcode -AddOnboardingRules
+```zsh
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
 ```
+
+#### zcode
+
+```zsh
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
+```
+
+The bootstrap defaults to onboarding rules and deliberately does not enable
+runtime routing. It honors `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and `ZCODE_HOME`.
+Re-running the same command performs a verified refresh through the existing
+snapshot, staging, and rollback workflow.
+
+## Advanced Local Installation
+
+Use a reviewed local checkout for offline installation, custom roots, or
+runtime-rule activation. The following examples run from the repository root
+with PowerShell 7 on every platform; Windows PowerShell 5.1 users can replace
+`pwsh` with `powershell.exe`.
 
 After the live routing tree exists, enable runtime rules:
 
@@ -210,7 +240,7 @@ non-OS profile requires `-AllowCustomProfile`.
 
 | Platform | Runtime | Path policy | CI coverage |
 | --- | --- | --- | --- |
-| Windows | Windows PowerShell 5.1 and PowerShell 7 | Local drives only; reject UNC, device namespaces, network-backed paths, and unsafe reparse points. | Pester on both shells plus repository validation. |
+| Windows 10 1803+ / Server 2019+ | Windows PowerShell 5.1 or PowerShell 7 with `curl.exe` | Local drives only; reject UNC, device namespaces, network-backed paths, and unsafe reparse points. | Pester on both shells plus repository validation. |
 | Linux | PowerShell 7.2+ | Resolve symbolic-link aliases; preserve Unix file mode; compare paths case-sensitively. | Pester on `ubuntu-latest` plus repository validation. |
 | macOS | PowerShell 7.2+ | Resolve symbolic-link aliases; preserve Unix file mode; compare conservatively without case. | Pester on `macos-latest` plus repository validation. |
 
@@ -293,8 +323,12 @@ never grants authority.
 ├── VERSION                  # Semantic version source of truth
 ├── agents/                  # Agent UI metadata
 ├── references/              # Progressive-disclosure agent references
-├── scripts/install.ps1      # Cross-platform transactional installer
-├── scripts/validate-skill.py # Repository contract validator
+├── scripts/
+│   ├── install.ps1          # Cross-platform transactional installer
+│   ├── install-remote.ps1   # Verified release bootstrap
+│   ├── install-manifest.json # Release payload digests and sizes
+│   ├── update-install-manifest.py # Deterministic manifest generator
+│   └── validate-skill.py    # Repository contract validator
 ├── tests/                   # Pester installer regression suite
 ├── examples/                # Layer 0/1/2 and global-rule templates
 ├── docs/                    # Human-facing architecture/install guides
@@ -341,6 +375,13 @@ Run the repository validator:
 
 ```powershell
 python -m pip install PyYAML
+python ./scripts/validate-skill.py
+```
+
+Release maintainers regenerate the verified payload manifest before validation:
+
+```powershell
+python ./scripts/update-install-manifest.py
 python ./scripts/validate-skill.py
 ```
 

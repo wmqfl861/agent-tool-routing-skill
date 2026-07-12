@@ -132,6 +132,7 @@ function Get-PhysicalTestPath {
 }
 
 $installer = Join-TestPath $repoRoot @('scripts', 'install.ps1')
+$remoteInstaller = Join-TestPath $repoRoot @('scripts', 'install-remote.ps1')
 $projectVersion = [IO.File]::ReadAllText((Join-Path $repoRoot 'VERSION')).Trim()
 
 function New-InstallLayout {
@@ -152,6 +153,31 @@ function New-InstallLayout {
         Global = Join-Path $config 'AGENTS.md'
         Skill = Join-TestPath $config @('skills', 'tool-use-architecture')
     }
+}
+
+function New-RemoteSourceFixture {
+    param([string]$Name)
+
+    $physicalTestDrive = Get-PhysicalTestPath -Path $TestDrive
+    $root = Join-Path $physicalTestDrive $Name
+    [void]$script:CreatedTestRoots.Add($root)
+    $source = Join-Path $root 'source'
+    New-Item -ItemType Directory -Path $source -Force | Out-Null
+
+    $manifestRelative = 'scripts/install-manifest.json'
+    $manifestSource = Join-TestPath $repoRoot @('scripts', 'install-manifest.json')
+    $manifestDestination = Join-TestPath $source @('scripts', 'install-manifest.json')
+    New-Item -ItemType Directory -Path (Split-Path -Parent $manifestDestination) -Force | Out-Null
+    Copy-Item -LiteralPath $manifestSource -Destination $manifestDestination -Force
+    $manifest = Get-Content -LiteralPath $manifestSource -Raw | ConvertFrom-Json
+    foreach ($entry in @($manifest.files)) {
+        $segments = @(([string]$entry.path).Split('/'))
+        $sourcePath = Join-TestPath $repoRoot $segments
+        $destinationPath = Join-TestPath $source $segments
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    }
+    return $source
 }
 
 function Write-EncodedText {
@@ -1185,5 +1211,134 @@ Describe 'scripts/install.ps1' {
                 [IO.Directory]::Delete($junctionRoot)
             }
         }
+    }
+}
+
+Describe 'scripts/install-remote.ps1' {
+    BeforeEach {
+        $script:CreatedTestRoots.Clear()
+    }
+
+    AfterEach {
+        foreach ($root in @($script:CreatedTestRoots.ToArray())) {
+            Remove-TestDirectory -Path $root
+        }
+        $script:CreatedTestRoots.Clear()
+    }
+
+    It 'installs the verified Codex payload and cleans remote staging' {
+        $layout = New-InstallLayout 'remote-codex'
+
+        $null = & $remoteInstaller -Target codex -SourceRoot $repoRoot `
+            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup
+
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) `
+            $projectVersion
+        Assert-True ([IO.File]::ReadAllText($layout.Global).Contains('Tool Onboarding Gate'))
+        Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
+            $_.Name -like 'agent-tool-routing-*'
+        }).Count 0
+    }
+
+    It 'forwards Claude Code and zcode targets without installing other agents' {
+        foreach ($agent in @('claude', 'zcode')) {
+            $layout = New-InstallLayout ("remote-$agent")
+            $config = Join-Path $layout.Root "$agent-config"
+            $arguments = @{
+                Target = $agent
+                SourceRoot = $repoRoot
+                StagingParent = $layout.Root
+                UserProfile = $layout.Profile
+                AllowCustomProfile = $true
+                BackupRoot = $layout.Backup
+            }
+            if ($agent -eq 'claude') {
+                $arguments.Add('ClaudeConfigDir', $config)
+                $globalFile = Join-Path $config 'CLAUDE.md'
+            } else {
+                $arguments.Add('ZcodeHome', $config)
+                $globalFile = Join-Path $config 'AGENTS.md'
+            }
+
+            $null = & $remoteInstaller @arguments
+
+            $skill = Join-TestPath $config @('skills', 'tool-routing-architecture')
+            Assert-Equal ([IO.File]::ReadAllText((Join-Path $skill 'VERSION')).Trim()) `
+                $projectVersion
+            Assert-True ([IO.File]::ReadAllText($globalFile).Contains('Tool Onboarding Gate'))
+            Assert-False (Test-Path -LiteralPath (Join-Path $config 'skills/tool-use-architecture'))
+        }
+    }
+
+    It 'performs verification but no target writes in remote WhatIf mode' {
+        $layout = New-InstallLayout 'remote-what-if'
+
+        $null = & $remoteInstaller -Target all -SourceRoot $repoRoot `
+            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome (Join-Path $layout.Root 'codex') `
+            -ClaudeConfigDir (Join-Path $layout.Root 'claude') `
+            -ZcodeHome (Join-Path $layout.Root 'zcode') `
+            -BackupRoot $layout.Backup -WhatIf
+
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Root 'codex'))
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Root 'claude'))
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Root 'zcode'))
+        Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
+            $_.Name -like 'agent-tool-routing-*'
+        }).Count 0
+    }
+
+    It 'rejects a modified payload before creating any target or backup' {
+        $source = New-RemoteSourceFixture 'remote-payload-tamper'
+        $layout = New-InstallLayout 'remote-payload-target'
+        [IO.File]::AppendAllText((Join-Path $source 'SKILL.md'), "`ntampered`n")
+        $threw = $false
+        $errorMessage = $null
+
+        try {
+            $null = & $remoteInstaller -Target codex -SourceRoot $source `
+                -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains("Payload verification failed for 'SKILL.md'"))
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
+        Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
+            $_.Name -like 'agent-tool-routing-*'
+        }).Count 0
+    }
+
+    It 'rejects a modified manifest before reading payload files' {
+        $source = New-RemoteSourceFixture 'remote-manifest-tamper'
+        $layout = New-InstallLayout 'remote-manifest-target'
+        [IO.File]::AppendAllText(
+            (Join-TestPath $source @('scripts', 'install-manifest.json')),
+            " `n"
+        )
+        $threw = $false
+        $errorMessage = $null
+
+        try {
+            $null = & $remoteInstaller -Target codex -SourceRoot $source `
+                -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('Install manifest SHA-256 verification failed'))
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
+        Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
+            $_.Name -like 'agent-tool-routing-*'
+        }).Count 0
     }
 }

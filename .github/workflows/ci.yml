@@ -86,7 +86,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 38)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes
@@ -122,7 +122,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 38)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes
@@ -166,7 +166,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 38)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes

@@ -6,6 +6,62 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-07-12
+
+### Added / 新增
+
+- Add nine copy-ready, single-command installers for every Windows, Linux, and
+  macOS combination with Codex, Claude Code, and zcode.
+- Add a release-pinned remote bootstrap and deterministic payload manifest.
+  The bootstrap verifies the manifest digest, exact payload allowlist, file
+  sizes, SHA-256 digests, and release version before invoking the existing
+  transactional installer.
+- Bound remote downloads by elapsed time and response-buffer size, reject HTTP
+  redirects inside the bootstrap, and retry only a finite number of times.
+- Disable user curl configuration in every outer wrapper so local `.curlrc`
+  settings cannot weaken TLS or alter transfer and retry behavior.
+- Add a deterministic manifest generator and five Pester regression tests for
+  verified installation, target forwarding, `-WhatIf`, payload tampering, and
+  manifest tampering.
+- 新增九条可直接复制的一行安装命令，覆盖 Windows、Linux、macOS 与 Codex、
+  Claude Code、zcode 的全部组合。
+- 新增固定 Release 版本的远程 bootstrap 和确定性 payload manifest。bootstrap
+  会在调用现有事务安装器前校验 manifest 摘要、精确 payload 白名单、文件大小、
+  SHA-256 摘要和 Release 版本。
+- 远程下载同时限制总耗时和响应缓冲区大小，bootstrap 内拒绝 HTTP 重定向，并只进行
+  有限次数重试。
+- 所有外层 wrapper 都禁用用户 curl 配置，避免本地 `.curlrc` 削弱 TLS 或改变传输、
+  重试行为。
+- 新增确定性 manifest 生成器，以及五项 Pester 回归测试，覆盖校验安装、目标转发、
+  `-WhatIf`、payload 篡改和 manifest 篡改。
+
+### Changed / 变更
+
+- Replace the Quick Start clone-and-change-directory flow with platform-native
+  PowerShell, Bash, and zsh wrappers. Every wrapper downloads to a private
+  temporary file and verifies the bootstrap before execution; none pipe
+  unverified network content into a shell.
+- Keep onboarding as the default one-command behavior and leave runtime routing
+  opt-in through the reviewed local-install path.
+- Define the Windows one-command baseline as Windows 10 1803+, Windows Server
+  2019+, or another supported release with `curl.exe`.
+- Extend repository validation and CI contracts to keep all nine commands,
+  release hashes, detailed install guides, manifest content, and the exact
+  43-test Pester count synchronized.
+- Require LF-only release payloads so generated digests match GitHub raw content
+  regardless of the maintainer's operating system or Git checkout settings.
+- 用适合平台的 PowerShell、Bash 和 zsh wrapper 替换快速开始中的克隆、切换目录
+  流程。每条命令先下载到私有临时文件并校验 bootstrap，再执行；不会把未经校验的
+  网络内容直接传给 shell。
+- 一行安装默认只启用 onboarding；runtime 路由继续通过经过审阅的本地安装方式
+  显式开启。
+- 将 Windows 一行安装基线明确为 Windows 10 1803+、Windows Server 2019+，或
+  其他提供 `curl.exe` 的受支持 Windows 版本。
+- 扩展仓库 validator 和 CI 契约，确保九条命令、Release 哈希、详细安装文档、
+  manifest 内容和严格的 43 项 Pester 测试数量保持同步。
+- 要求 Release payload 只使用 LF 换行，确保生成的摘要不受维护者操作系统或 Git
+  checkout 配置影响，并与 GitHub raw 内容一致。
+
 ## [0.1.3] - 2026-07-12
 
 ### Changed / 变更
@@ -115,6 +171,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.1.4]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.4
 [0.1.3]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.3
 [0.1.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.2
 [0.1.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.1

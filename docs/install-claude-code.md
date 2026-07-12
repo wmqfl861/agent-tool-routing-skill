@@ -4,44 +4,39 @@ Claude Code installs this repository as `tool-routing-architecture`.
 
 ## Install Architecture and Onboarding
 
-From the repository root, choose the command for your platform.
+Choose the one command for your platform. It is pinned to `v0.1.4`, verifies
+the bootstrap and every payload file before execution, and can run from any
+directory without Git.
+
+The Windows command targets Windows 10 1803+, Windows Server 2019+, or another
+supported Windows release that provides `curl.exe`.
 
 ### Windows
 
-Windows PowerShell 5.1:
-
 ```powershell
-powershell.exe -NoProfile -File .\scripts\install.ps1 -Target claude -AddOnboardingRules
-```
-
-PowerShell 7:
-
-```powershell
-pwsh -NoProfile -File .\scripts\install.ps1 -Target claude -AddOnboardingRules
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1';$h='f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
-PowerShell 7.2 or later from Bash:
-
 ```bash
-pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
 ```
 
 ### macOS
 
-PowerShell 7.2 or later from zsh:
-
 ```zsh
-pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -AddOnboardingRules
+(set -eu;umask 077;p="$(mktemp)";trap 'rm -f "$p"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.4/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'f8c91316be0712f7e75a46125c67a5ea9c8f42bd4027d6c8a17037c8b8d6c892' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
 ```
 
 This installs the architecture skill and lifecycle gate without activating
 ordinary runtime routing.
 
-Subsequent `pwsh` commands use the same syntax with PowerShell 7 on Windows,
-Linux, and macOS. On Windows PowerShell 5.1, replace `pwsh` with
-`powershell.exe`.
+## Configuration Root
+
+The remaining examples require a reviewed local checkout. `pwsh` uses the same
+syntax with PowerShell 7 on Windows, Linux, and macOS. On Windows PowerShell
+5.1, replace `pwsh` with `powershell.exe`.
 
 The Claude Code config root resolves in this order:
 
