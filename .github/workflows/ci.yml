@@ -84,6 +84,9 @@ jobs:
         shell: powershell
         run: |
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run installer tests
@@ -120,6 +123,9 @@ jobs:
       - name: Install Pester
         shell: pwsh
         run: |
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run installer tests
@@ -164,6 +170,9 @@ jobs:
       - name: Install Pester
         shell: pwsh
         run: |
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run installer tests
