@@ -6,6 +6,64 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-07-13
+
+### Added / 新增
+
+- Add an explicit `-InitializeRouting` installation mode. It installs the
+  onboarding gate and creates or preserves a resumable per-Agent initial-index
+  request. An Agent-mediated install continues the job before ordinary work;
+  a terminal install is resumed on the next fresh Agent turn.
+- Add an eight-phase initial-index workflow for registered MCP servers, enabled
+  plugins, installed Skills, configured CLI/API integrations, and Agent-visible
+  built-ins. The workflow maps existing Skills, classifies capabilities as
+  A/B/C, resolves missing A guides, builds routes, validates them, and activates
+  runtime routing only when no enabled A capability remains unresolved.
+- Add a future-tool gate that checks local and bundled Skills first, then asks
+  whether to search and review an official Skill, author from verified official
+  documentation, or leave the tool unrouted.
+- Preserve active `pending`, in-progress, blocked, needs-input, and failed index
+  requests byte-for-byte across architecture refreshes instead of resetting or
+  orphaning the job.
+- 新增显式 `-InitializeRouting` 安装模式：安装 onboarding 门禁、为每个 Agent
+  创建或保留可恢复的首次索引请求。由 Agent 发起安装时会在恢复普通工作前继续
+  该任务；在终端安装时由下一次新 Agent 会话继续。
+- 新增八阶段首次索引流程，覆盖已注册 MCP Server、已启用插件、已安装 Skill、
+  已配置 CLI/API 集成和 Agent 可见内置能力。流程会匹配现有 Skill、执行 A/B/C
+  分类、补齐缺失的 A 类指南、构建并验证路由，并且只在所有已启用 A 类能力均
+  已解决后激活 runtime 路由。
+- 新增后续工具门禁：先检查本地及工具自带 Skill；缺失时询问用户选择检索并
+  审查官方 Skill、根据已验证官方文档编写，或保持未路由。
+- 架构刷新会逐字节保留 `pending`、处理中、blocked、needs-input 和 failed
+  的索引请求，不再重置任务或留下失去控制文件的孤立 job。
+
+### Security and behavior / 安全与行为
+
+- Define “all tools” as capabilities registered with or exposed to the target
+  Agent, not every executable on `PATH`. A and B capabilities enter routing;
+  C primitives remain inventory-only.
+- Require canonical-source verification, exact commit or artifact pinning,
+  non-discoverable staging, and review before activating any remote Skill.
+  Insufficient official evidence leaves an A capability unresolved instead of
+  generating a speculative guide.
+- Bundle the complete Layer 0/1/2 templates with the installed architecture
+  Skill and extend verified remote payload coverage to those templates and the
+  initial-index reference.
+- Make generated rollback scripts remove only the unchanged initial-index
+  request created by that installation. Requests already advanced by an Agent
+  are preserved with an explicit warning, and malformed request list fields are
+  rejected before any target write.
+- 将“所有工具”限定为目标 Agent 已注册或实际暴露的能力，而不是扫描 `PATH`
+  中的所有程序；A、B 类进入路由，C 类原语只保留在清单中。
+- 远程 Skill 激活前必须确认 canonical source、固定精确 commit 或 artifact
+  digest、在非自动发现目录暂存并完成审查；官方证据不足时保持 A 类未解决，
+  不生成推测性指南。
+- 已安装架构 Skill 现在包含完整 Layer 0/1/2 模板，远程 payload 校验范围同步
+  覆盖这些模板和首次索引 reference。
+- 生成的回滚脚本现在只删除由本次安装创建且内容未变化的首次索引请求；已被
+  Agent 推进的请求会保留并明确告警，畸形请求中的列表字段则会在任何目标写入
+  前被拒绝。
+
 ## [0.1.5] - 2026-07-12
 
 ### Fixed / 修复
@@ -181,6 +239,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.2.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.0
 [0.1.5]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.5
 [0.1.4]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.4
 [0.1.3]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.3

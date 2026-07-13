@@ -84,6 +84,17 @@ Use B only when the capability is narrow, read-only, low risk, and completely
 described in a few category lines. Use C only for primitives or defaults already
 governed elsewhere.
 
+For an initial index, keep a record for every enabled registered or discoverable
+capability. Route all A and B records, but keep C records inventory-only with an
+explicit exclusion rationale. Treat unknown or weakly evidenced classifications
+as unresolved A candidates until reviewed; do not omit them to make route
+generation pass.
+
+Record provenance for every imported or authored A guide: canonical owner and
+repository, exact commit SHA or verified release digest, reviewed source paths,
+and whether the active guide was imported, adapted, or locally authored. Keep
+this control data outside YAML frontmatter and never include credentials.
+
 ## Path And Content Checks
 
 - Use exact relative paths and verify targets exist before adding routes.
@@ -94,3 +105,8 @@ governed elsewhere.
   remote install commands in reusable examples.
 - Search for duplicate routes, circular fallbacks, missing A guides, and stale
   names after every structural edit.
+- Preserve unrelated user-authored content. Before replacing a generated route
+  or guide, compare it with the last recorded digest and stop for review when it
+  has local modifications.
+- Do not publish or activate an initial routing tree until every indexed A guide
+  path resolves and the unresolved-A set is empty.

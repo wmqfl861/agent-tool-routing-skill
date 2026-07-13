@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXPECTED_PESTER_TESTS: 50
+
 jobs:
   repository-validation:
     name: Repository validation (${{ matrix.os }})
@@ -86,7 +89,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne [int]$env:EXPECTED_PESTER_TESTS)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes
@@ -122,7 +125,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne [int]$env:EXPECTED_PESTER_TESTS)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes
@@ -166,7 +169,7 @@ jobs:
           $config.Run.PassThru = $true
           $config.Output.Verbosity = 'Detailed'
           $result = Invoke-Pester -Configuration $config
-          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne 43)) {
+          if (($result.FailedCount -ne 0) -or ($result.PassedCount -ne [int]$env:EXPECTED_PESTER_TESTS)) {
             throw "Unexpected test result: $($result.PassedCount) passed, $($result.FailedCount) failed."
           }
       - name: Check whitespace and tracked-file changes

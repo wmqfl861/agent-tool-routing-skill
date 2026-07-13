@@ -9,6 +9,8 @@ param(
 
     [switch]$AddRuntimeRules,
 
+    [switch]$InitializeRouting,
+
     # This is a parent directory. Each invocation creates a unique install-* snapshot below it.
     [string]$BackupRoot,
 
@@ -32,8 +34,22 @@ $VersionSource = Join-Path $RepoRoot 'VERSION'
 $SkillSource = Join-Path $RepoRoot 'SKILL.md'
 $AgentsSource = Join-Path $RepoRoot 'agents'
 $ReferencesSource = Join-Path $RepoRoot 'references'
-$RequiredReferenceFiles = @('lifecycle.md', 'authoring.md', 'runtime-adapters.md', 'route-tests.md')
+$RequiredReferenceFiles = @(
+    'lifecycle.md',
+    'authoring.md',
+    'initial-index.md',
+    'runtime-adapters.md',
+    'route-tests.md'
+)
 $ExamplesSource = Join-Path $RepoRoot 'examples'
+$RequiredExampleFiles = @(
+    'AGENTS.md.snippet',
+    'CLAUDE.md.snippet',
+    'tool-index.SKILL.md',
+    'category-skill.example.md',
+    'tool-specific-skill.example.md'
+)
+$MaximumIndexRequestBytes = 131072
 $DirectorySeparator = [System.IO.Path]::DirectorySeparatorChar
 $IsWindowsPlatform = $DirectorySeparator -eq [char]'\'
 $IsMacOSPlatform = (-not $IsWindowsPlatform) -and
@@ -451,8 +467,19 @@ function Write-TextFileAtomic {
     )
 
     $parent = Split-Path -Parent $Path
+    $parentCreated = $false
     if (-not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        $parentCreated = $true
+    }
+    Assert-NoExistingReparsePoint -Path $Path -Purpose 'new UTF-8 state file creation'
+    if ($parentCreated -and (-not $IsWindowsPlatform)) {
+        [IO.File]::SetUnixFileMode(
+            $parent,
+            [IO.UnixFileMode]::UserRead -bor
+                [IO.UnixFileMode]::UserWrite -bor
+                [IO.UnixFileMode]::UserExecute
+        )
     }
 
     $name = [System.IO.Path]::GetFileName($Path)
@@ -550,6 +577,10 @@ function Convert-CodexCompatibilityText {
     )
     $updated = $updated.Replace('$tool-routing-architecture', '$tool-use-architecture')
     $updated = $updated.Replace('`tool-routing-architecture`', '`tool-use-architecture`')
+    $updated = $updated.Replace(
+        'skills/tool-routing-architecture/',
+        'skills/tool-use-architecture/'
+    )
     $updated = $updated.Replace(
         'Use this single-skill gate when only `tool-routing-architecture` is installed.',
         'Use this single-skill gate when only `tool-use-architecture` is installed.'
@@ -850,6 +881,7 @@ function New-GlobalFilePlan {
     $updated = $existing
     $statuses = New-Object System.Collections.Generic.List[string]
     $writesRuntime = $false
+    $writesOnboarding = $false
 
     $legacy = Get-MarkerInterval -Intervals $intervals -Name 'legacy'
     if ($legacy) {
@@ -865,6 +897,7 @@ function New-GlobalFilePlan {
         $replacement = $runtimeBlock + $newLine + $newLine + $onboardingBlock
         $updated = Replace-Interval -Content $existing -Interval $legacy -Replacement $replacement
         $writesRuntime = $true
+        $writesOnboarding = [bool]$WantOnboarding
         $statuses.Add('migrated legacy managed block')
     } else {
         if ($WantRuntime) {
@@ -889,11 +922,13 @@ function New-GlobalFilePlan {
             if ($onboarding) {
                 $updated = Replace-Interval -Content $updated -Interval $onboarding -Replacement $onboardingBlock
                 $statuses.Add('onboarding installed or updated')
+                $writesOnboarding = $true
             } elseif (Test-UnmanagedSection -Content $updated -Heading 'Tool Onboarding Gate') {
                 $statuses.Add('onboarding unmarked; left unchanged')
             } else {
                 $updated = Add-ManagedBlock -Content $updated -Block $onboardingBlock -NewLine $newLine
                 $statuses.Add('onboarding installed or updated')
+                $writesOnboarding = $true
             }
         }
     }
@@ -904,6 +939,7 @@ function New-GlobalFilePlan {
         UpdatedText = $updated
         Changed = -not [string]::Equals($existing, $updated, [System.StringComparison]::Ordinal)
         WritesRuntime = $writesRuntime
+        WritesOnboarding = $writesOnboarding
         Status = if ($statuses.Count -eq 0) { 'not requested' } else { $statuses.ToArray() -join '; ' }
     }
 }
@@ -923,6 +959,7 @@ function Get-AgentConfig {
                 RuntimeDependency = Join-PathSegments -Root $root -Segments @('skills', 'tool-index', 'SKILL.md')
                 GlobalFile = Join-Path $root 'AGENTS.md'
                 Snippet = Join-Path $ExamplesSource 'AGENTS.md.snippet'
+                IndexRequest = Join-PathSegments -Root $root -Segments @('tool-routing-state', 'initial-index.json')
             }
         }
         'claude' {
@@ -936,6 +973,7 @@ function Get-AgentConfig {
                 RuntimeDependency = Join-PathSegments -Root $root -Segments @('skills', 'tool-index', 'SKILL.md')
                 GlobalFile = Join-Path $root 'CLAUDE.md'
                 Snippet = Join-Path $ExamplesSource 'CLAUDE.md.snippet'
+                IndexRequest = Join-PathSegments -Root $root -Segments @('tool-routing-state', 'initial-index.json')
             }
         }
         'zcode' {
@@ -949,9 +987,142 @@ function Get-AgentConfig {
                 RuntimeDependency = Join-PathSegments -Root $root -Segments @('skills', 'tool-index', 'SKILL.md')
                 GlobalFile = Join-Path $root 'AGENTS.md'
                 Snippet = Join-Path $ExamplesSource 'AGENTS.md.snippet'
+                IndexRequest = Join-PathSegments -Root $root -Segments @('tool-routing-state', 'initial-index.json')
             }
         }
         default { throw "Unknown agent target: $Agent" }
+    }
+}
+
+function Get-ExistingInitialIndexRequest {
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    if (-not (Test-Path -LiteralPath $Config.IndexRequest)) {
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $Config.IndexRequest -PathType Leaf)) {
+        throw "Initial routing request must be an ordinary file: $($Config.IndexRequest)"
+    }
+
+    $bytes = [IO.File]::ReadAllBytes($Config.IndexRequest)
+    if ($bytes.Length -gt $MaximumIndexRequestBytes) {
+        throw "Initial routing request exceeds $MaximumIndexRequestBytes bytes: $($Config.IndexRequest)"
+    }
+    $strictUtf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false, $true
+    try {
+        $requestText = $strictUtf8.GetString($bytes)
+        if ($requestText.Length -gt 0 -and $requestText[0] -eq [char]0xFEFF) {
+            throw 'BOM is not allowed.'
+        }
+        $request = $requestText | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "Initial routing request must be UTF-8 JSON without BOM: $($Config.IndexRequest)"
+    }
+
+    $allowedStatuses = @(
+        'pending',
+        'inventory',
+        'classifying',
+        'sourcing',
+        'planning',
+        'applying',
+        'validating',
+        'blocked',
+        'needs-input',
+        'failed'
+    )
+    $allowedRuntimeModes = @('auto-discovery', 'strict-progressive')
+    $requiredProperties = @(
+        'schema_version',
+        'request_id',
+        'status',
+        'target_agent',
+        'project_version',
+        'runtime_mode',
+        'scope',
+        'completed_phases',
+        'unresolved_a_tools'
+    )
+    $missingProperty = @($requiredProperties | Where-Object {
+        $null -eq $request.PSObject.Properties[$_]
+    }).Count -gt 0
+    $completedPhasesAreStrings = ($request.completed_phases -is [Collections.IList]) -and
+        (@($request.completed_phases | Where-Object { $_ -isnot [string] }).Count -eq 0)
+    $unresolvedToolsAreStrings = ($request.unresolved_a_tools -is [Collections.IList]) -and
+        (@($request.unresolved_a_tools | Where-Object { $_ -isnot [string] }).Count -eq 0)
+    if ($missingProperty -or
+        ($request.schema_version -ne 1) -or
+        ([string]$request.target_agent -ne $Config.Name) -or
+        ([string]$request.scope -ne 'registered-capabilities') -or
+        ([string]$request.request_id -notmatch '^[0-9a-f]{32}$') -or
+        ([string]$request.project_version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') -or
+        ($allowedRuntimeModes -notcontains [string]$request.runtime_mode) -or
+        ($allowedStatuses -notcontains [string]$request.status) -or
+        (-not $completedPhasesAreStrings) -or
+        (-not $unresolvedToolsAreStrings)) {
+        throw "Initial routing request metadata is invalid or belongs to another Agent: $($Config.IndexRequest)"
+    }
+
+    return [Convert]::ToBase64String($bytes)
+}
+
+function New-InitialIndexRequestText {
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $request = [ordered]@{
+        schema_version = 1
+        request_id = [guid]::NewGuid().ToString('N')
+        status = 'pending'
+        target_agent = $Config.Name
+        project_version = $ProjectVersion
+        runtime_mode = 'auto-discovery'
+        scope = 'registered-capabilities'
+        requested_at_utc = [DateTime]::UtcNow.ToString('o')
+        phase = 'pending'
+        completed_phases = @()
+        unresolved_a_tools = @()
+    }
+    return ($request | ConvertTo-Json -Depth 4).Replace("`r`n", "`n") + "`n"
+}
+
+function Write-NewUtf8NoBomFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Content
+    )
+
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    $utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    $bytes = $utf8.GetBytes($Content)
+    $created = $false
+    try {
+        $stream = [IO.File]::Open(
+            $Path,
+            [IO.FileMode]::CreateNew,
+            [IO.FileAccess]::Write,
+            [IO.FileShare]::None
+        )
+        $created = $true
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush($true)
+        } finally {
+            $stream.Dispose()
+        }
+        if (-not $IsWindowsPlatform) {
+            [IO.File]::SetUnixFileMode(
+                $Path,
+                [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite
+            )
+        }
+    } catch {
+        if ($created -and (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        }
+        throw
     }
 }
 
@@ -1001,6 +1172,9 @@ function Stage-AgentSkill {
     if (Test-Path -LiteralPath $ReferencesSource -PathType Container) {
         Copy-Item -LiteralPath $ReferencesSource -Destination (Join-Path $stageDir 'references') -Recurse -Force
     }
+    if (Test-Path -LiteralPath $ExamplesSource -PathType Container) {
+        Copy-Item -LiteralPath $ExamplesSource -Destination (Join-Path $stageDir 'examples') -Recurse -Force
+    }
 
     foreach ($referenceFile in $RequiredReferenceFiles) {
         $stagedReference = Join-PathSegments -Root $stageDir -Segments @('references', $referenceFile)
@@ -1009,8 +1183,20 @@ function Stage-AgentSkill {
         }
     }
 
+    foreach ($exampleFile in $RequiredExampleFiles) {
+        $stagedExample = Join-PathSegments -Root $stageDir -Segments @('examples', $exampleFile)
+        if (-not (Test-Path -LiteralPath $stagedExample -PathType Leaf)) {
+            throw "Staged skill for $($Config.Name) is missing required example: $stagedExample"
+        }
+    }
+
     if ($Config.Name -eq 'codex') {
-        $files = @((Join-Path $stageDir 'SKILL.md'), (Join-PathSegments -Root $stageDir -Segments @('agents', 'openai.yaml')))
+        $files = @(
+            (Join-Path $stageDir 'SKILL.md'),
+            (Join-PathSegments -Root $stageDir -Segments @('agents', 'openai.yaml')),
+            (Join-PathSegments -Root $stageDir -Segments @('examples', 'AGENTS.md.snippet')),
+            (Join-PathSegments -Root $stageDir -Segments @('examples', 'CLAUDE.md.snippet'))
+        )
         foreach ($file in $files) {
             if (Test-Path -LiteralPath $file) {
                 $info = Get-TextFileInfo -Path $file
@@ -1093,16 +1279,26 @@ if (-not (Test-Path -LiteralPath $AgentsSource -PathType Container)) {
 if (-not (Test-Path -LiteralPath $ReferencesSource -PathType Container)) {
     throw "Missing references directory at repository root: $ReferencesSource"
 }
+if (-not (Test-Path -LiteralPath $ExamplesSource -PathType Container)) {
+    throw "Missing examples directory at repository root: $ExamplesSource"
+}
 foreach ($referenceFile in $RequiredReferenceFiles) {
     $referencePath = Join-Path $ReferencesSource $referenceFile
     if (-not (Test-Path -LiteralPath $referencePath -PathType Leaf)) {
         throw "Missing required skill reference: $referencePath"
     }
 }
+foreach ($exampleFile in $RequiredExampleFiles) {
+    $examplePath = Join-Path $ExamplesSource $exampleFile
+    if (-not (Test-Path -LiteralPath $examplePath -PathType Leaf)) {
+        throw "Missing required skill example: $examplePath"
+    }
+}
 Assert-NoExistingReparsePoint -Path $VersionSource -Purpose 'source version staging'
 Assert-NoExistingReparsePoint -Path $SkillSource -Purpose 'source skill staging'
 Assert-NoReparsePointTree -Path $AgentsSource -Purpose 'source agents staging'
 Assert-NoReparsePointTree -Path $ReferencesSource -Purpose 'source references staging'
+Assert-NoReparsePointTree -Path $ExamplesSource -Purpose 'source examples staging'
 
 $UserProfileFull = Normalize-RootPath -Path $UserProfile
 $OsUserProfileFull = Normalize-RootPath -Path ([Environment]::GetFolderPath('UserProfile'))
@@ -1116,21 +1312,32 @@ if (-not [string]::Equals($UserProfileFull, $OsUserProfileFull, $PathComparison)
 $CodexHomeFull = Get-ConfiguredRoot -ExplicitValue $CodexHome -EnvironmentName 'CODEX_HOME' -Fallback (Join-Path $UserProfileFull '.codex')
 $ClaudeConfigDirFull = Get-ConfiguredRoot -ExplicitValue $ClaudeConfigDir -EnvironmentName 'CLAUDE_CONFIG_DIR' -Fallback (Join-Path $UserProfileFull '.claude')
 $ZcodeHomeFull = Get-ConfiguredRoot -ExplicitValue $ZcodeHome -EnvironmentName 'ZCODE_HOME' -Fallback (Join-Path $UserProfileFull '.zcode')
+$initializeRoutingRequested = [bool]$InitializeRouting
 $wantRuntime = [bool]($AddRuntimeRules -or $AddGlobalRules)
-$wantOnboarding = [bool]($AddOnboardingRules -or $AddGlobalRules)
+$wantOnboarding = [bool]($AddOnboardingRules -or $AddGlobalRules -or $initializeRoutingRequested)
 $targetNames = if ($Target -eq 'all') { @('codex', 'claude', 'zcode') } else { @($Target) }
 $configs = @($targetNames | ForEach-Object { Get-AgentConfig -Agent $_ })
 $plans = New-Object System.Collections.Generic.List[object]
 
 # Complete every read-only validation before creating a snapshot or touching a target.
 foreach ($config in $configs) {
-    foreach ($targetPath in @($config.SkillDir, $config.GlobalFile, $config.RuntimeDependency)) {
+    foreach ($targetPath in @($config.SkillDir, $config.GlobalFile, $config.RuntimeDependency, $config.IndexRequest)) {
         if (-not (Test-PathContained -Parent $config.ConfigRoot -Child $targetPath)) {
             throw "Computed target '$targetPath' escapes config root '$($config.ConfigRoot)'."
         }
     }
     Assert-NoExistingReparsePoint -Path $config.ConfigRoot -Purpose "$($config.Name) config access"
     Assert-NoReparsePointTree -Path $config.SkillDir -Purpose "$($config.Name) skill installation"
+    Assert-NoExistingReparsePoint -Path $config.IndexRequest -Purpose "$($config.Name) initial routing state"
+    $existingIndexRequest = Get-ExistingInitialIndexRequest -Config $config
+    $config | Add-Member -NotePropertyName ExistingIndexRequestBase64 -NotePropertyValue $existingIndexRequest
+    $newIndexRequestText = if ($initializeRoutingRequested -and
+        [string]::IsNullOrWhiteSpace($existingIndexRequest)) {
+        New-InitialIndexRequestText -Config $config
+    } else {
+        $null
+    }
+    $config | Add-Member -NotePropertyName NewIndexRequestText -NotePropertyValue $newIndexRequestText
     if ($wantRuntime -or $wantOnboarding) {
         Assert-NoExistingReparsePoint -Path $config.GlobalFile -Purpose "$($config.Name) global rule installation"
         if (-not (Test-Path -LiteralPath $config.Snippet -PathType Leaf)) {
@@ -1140,12 +1347,16 @@ foreach ($config in $configs) {
         if ($globalPlan.WritesRuntime -and -not (Test-Path -LiteralPath $config.RuntimeDependency -PathType Leaf)) {
             throw "Runtime routing for $($config.Name) requires tool-index at '$($config.RuntimeDependency)'. The planned rules may come from an explicit runtime request or preserved legacy managed content. Install tool-index before continuing."
         }
+        if ($initializeRoutingRequested -and -not $globalPlan.WritesOnboarding) {
+            throw "Initial routing for $($config.Name) requires a managed Tool Onboarding Gate. Remove or mark the existing unmanaged section before retrying."
+        }
     } else {
         $globalPlan = [pscustomobject]@{
             FileInfo = $null
             UpdatedText = $null
             Changed = $false
             WritesRuntime = $false
+            WritesOnboarding = $false
             Status = 'not requested'
         }
     }
@@ -1164,6 +1375,13 @@ foreach ($plan in $plans) {
             Agent = $plan.Config.Name
             Kind = 'global instructions'
             Path = $plan.Config.GlobalFile
+        })
+    }
+    if (-not [string]::IsNullOrWhiteSpace($plan.Config.NewIndexRequestText)) {
+        $mutationTargets.Add([pscustomobject]@{
+            Agent = $plan.Config.Name
+            Kind = 'initial routing request'
+            Path = $plan.Config.IndexRequest
         })
     }
 }
@@ -1199,6 +1417,7 @@ foreach ($plan in $plans) {
     $overlapCandidates.Add($plan.Config.SkillRoot)
     $overlapCandidates.Add($plan.Config.SkillDir)
     $overlapCandidates.Add($plan.Config.GlobalFile)
+    $overlapCandidates.Add($plan.Config.IndexRequest)
 }
 foreach ($candidate in $overlapCandidates) {
     if (Test-PathsOverlap -First $backupParent -Second $candidate) {
@@ -1241,6 +1460,19 @@ foreach ($plan in $plans) {
         Add-BackupAndRollback -Path $plan.Config.GlobalFile -Label "$($plan.Config.Name)-global" `
             -PreflightCommands $rollbackPreflightCommands -Commands $rollbackCommands `
             -SnapshotRoot $snapshotRoot
+    }
+    if (-not [string]::IsNullOrWhiteSpace($plan.Config.NewIndexRequestText)) {
+        $requestBytes = (New-Object Text.UTF8Encoding($false)).GetBytes(
+            $plan.Config.NewIndexRequestText
+        )
+        $requestBase64 = [Convert]::ToBase64String($requestBytes)
+        $requestMetadata = $plan.Config.NewIndexRequestText | ConvertFrom-Json
+        $quotedRequestPath = Quote-PowerShellLiteral -Value $plan.Config.IndexRequest
+        $quotedRequestBase64 = Quote-PowerShellLiteral -Value $requestBase64
+        $quotedRequestId = Quote-PowerShellLiteral -Value ([string]$requestMetadata.request_id)
+        $rollbackCommands.Add(
+            "Remove-UnchangedAgentToolRoutingRequest -Path $quotedRequestPath -ExpectedContentBase64 $quotedRequestBase64 -ExpectedRequestId $quotedRequestId"
+        )
     }
 }
 
@@ -1317,6 +1549,63 @@ function Restore-AgentToolRoutingPath {
         }
     }
 }
+
+function Remove-UnchangedAgentToolRoutingRequest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedContentBase64,
+        [Parameter(Mandatory = $true)][string]$ExpectedRequestId
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        $isReparsePoint = ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+        if ($item.PSIsContainer -or $isReparsePoint) {
+            Write-Warning "Initial routing request is not an ordinary file and was preserved for manual review: $Path"
+            return
+        }
+        if ($item.Length -gt 131072) {
+            Write-Warning "Initial routing request exceeds 131072 bytes and was preserved for manual review: $Path"
+            return
+        }
+
+        $currentBytes = [IO.File]::ReadAllBytes($Path)
+        $currentBase64 = [Convert]::ToBase64String($currentBytes)
+        $requestId = $null
+        try {
+            $strictUtf8 = New-Object Text.UTF8Encoding -ArgumentList $false, $true
+            $currentText = $strictUtf8.GetString($currentBytes)
+            $request = $currentText | ConvertFrom-Json -ErrorAction Stop
+            $requestId = [string]$request.request_id
+        } catch {
+            Write-Warning "Initial routing request is no longer valid UTF-8 JSON and was preserved for manual review: $Path"
+            return
+        }
+
+        $contentMatches = [string]::Equals(
+            $currentBase64,
+            $ExpectedContentBase64,
+            [StringComparison]::Ordinal
+        )
+        $requestIdMatches = [string]::Equals(
+            $requestId,
+            $ExpectedRequestId,
+            [StringComparison]::Ordinal
+        )
+        if (-not ($contentMatches -and $requestIdMatches)) {
+            Write-Warning "Initial routing request changed after installation and was preserved for manual review: $Path"
+            return
+        }
+
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    } catch {
+        Write-Warning "Could not safely clean initial routing request '$Path'; it was preserved for manual review. $($_.Exception.Message)"
+    }
+}
 '@
 $rollbackHelperLines = @([regex]::Split($rollbackHelper.Trim(), '\r\n|\n|\r'))
 $rollbackLines = @(
@@ -1328,6 +1617,7 @@ Write-Utf8BomFileAtomic -Path $rollbackPath -Content ($rollbackLines -join "`r`n
 
 $results = New-Object System.Collections.Generic.List[object]
 $modificationStarted = $false
+$createdIndexRequests = New-Object System.Collections.Generic.List[object]
 try {
     foreach ($plan in $plans) {
         $modificationStarted = $true
@@ -1345,8 +1635,40 @@ try {
             GlobalRules = $plan.Global.Status
         })
     }
+    foreach ($plan in $plans) {
+        if (-not [string]::IsNullOrWhiteSpace($plan.Config.NewIndexRequestText)) {
+            Assert-NoExistingReparsePoint -Path $plan.Config.IndexRequest `
+                -Purpose "$($plan.Config.Name) initial routing state creation"
+            Write-NewUtf8NoBomFile -Path $plan.Config.IndexRequest `
+                -Content $plan.Config.NewIndexRequestText
+            $createdIndexRequests.Add([pscustomobject]@{
+                Path = $plan.Config.IndexRequest
+                ContentBase64 = [Convert]::ToBase64String(
+                    (New-Object Text.UTF8Encoding($false)).GetBytes($plan.Config.NewIndexRequestText)
+                )
+            })
+        }
+    }
 } catch {
     $installError = $_
+    foreach ($createdRequest in $createdIndexRequests) {
+        try {
+            if (Test-Path -LiteralPath $createdRequest.Path -PathType Leaf) {
+                $currentBytes = [IO.File]::ReadAllBytes($createdRequest.Path)
+                $currentBase64 = [Convert]::ToBase64String($currentBytes)
+                if ([string]::Equals(
+                        $currentBase64,
+                        $createdRequest.ContentBase64,
+                        [StringComparison]::Ordinal)) {
+                    Remove-Item -LiteralPath $createdRequest.Path -Force
+                } else {
+                    Write-Warning "Initial routing request changed before rollback cleanup and was preserved: $($createdRequest.Path)"
+                }
+            }
+        } catch {
+            Write-Warning "Could not clean initial routing request '$($createdRequest.Path)' before core rollback: $($_.Exception.Message)"
+        }
+    }
     if ($modificationStarted) {
         try {
             & $rollbackPath | Out-Null
@@ -1364,3 +1686,10 @@ Write-Output "Installed agent tool-routing skill v$ProjectVersion."
 Write-Output "Backup: $snapshotRoot"
 Write-Output "Rollback: $rollbackPath"
 $results | Format-Table -AutoSize
+
+if ($initializeRoutingRequested) {
+    foreach ($plan in $plans) {
+        Write-Output "Initial routing request: $($plan.Config.IndexRequest)"
+        Write-Output "If an Agent invoked this installer, it should process the request before returning to ordinary work. Otherwise the target Agent will process it on its next fresh turn."
+    }
+}

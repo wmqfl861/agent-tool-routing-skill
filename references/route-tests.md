@@ -82,6 +82,35 @@ server ID, skill path, environment variables, and config keys. Confirm no active
 route selects it, its unused guide is gone or archived, and the replacement is
 reachable. Document intentionally retained historical mentions separately.
 
+## Initial Index Tests
+
+Exercise initial indexing with fixtures containing enabled and disabled MCP
+servers, plugins, bundled skills, local skills, C primitives, unrelated `PATH`
+executables, and at least one unresolved A capability. Confirm:
+
+- a durable `pending` job exists before discovery or network access;
+- only registered or discoverable enabled capabilities in effective user and
+  active-workspace scope enter the active inventory;
+- disabled plugins, inactive caches, unrelated workspaces, and arbitrary
+  `PATH` commands do not become routes;
+- local and bundled skill matching occurs before official-source search;
+- progress advances through the documented phases without leaking sensitive
+  values;
+- official candidates are pinned, staged outside discovery, reviewed, and
+  validated before activation;
+- documentation-based fallback uses adequate official evidence and never
+  invents missing commands or risks;
+- every resolved A and B capability is routed and every C is inventory-only;
+- any unresolved A leaves the job blocked and the generated runtime tree
+  inactive;
+- a completed or blocked job returns control to normal conversation and can
+  resume without repeating valid work or overwriting later user changes.
+
+For later onboarding, test an A capability with no local or bundled guide.
+Confirm the agent asks once among official search, authoring from official
+documentation, and leaving it unrouted; follows only the selected choice; and
+never calls an A capability left unrouted.
+
 ## Structural Checks
 
 - Parse every discoverable `SKILL.md` frontmatter and verify names and folders.
@@ -92,3 +121,5 @@ reachable. Document intentionally retained historical mentions separately.
   fallbacks, missing A guides, and Layer 0 vendor commands.
 - Confirm global snippets use the exact required H2 headings and state the same
   runtime behavior and authorization rules.
+- Confirm initial-index inventory, provenance, unresolved-A, backup, and status
+  records agree with the active route tree.

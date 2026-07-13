@@ -7,6 +7,8 @@ param(
 
     [switch]$AddRuntimeRules,
 
+    [switch]$InitializeRouting,
+
     [string]$BackupRoot,
 
     [string]$UserProfile = [Environment]::GetFolderPath('UserProfile'),
@@ -30,17 +32,24 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ReleaseVersion = '0.1.5'
+if ($InitializeRouting -and $SkipOnboardingRules) {
+    throw '-InitializeRouting requires onboarding rules; remove -SkipOnboardingRules.'
+}
+$ReleaseVersion = '0.2.0'
 $Repository = 'wmqfl861/agent-tool-routing-skill'
 $ManifestRelativePath = 'scripts/install-manifest.json'
-$ManifestSha256 = '7360028f1ae197f4ceedc3f844e4742600d8f424e1000d76eeef970d2fb2663b'
+$ManifestSha256 = '15356e9db87975f7dea03e48e0b80e33f29ea0d97e64af6644f195ba258d34d0'
 $RequiredPayloadPaths = @(
     'VERSION',
     'SKILL.md',
     'agents/openai.yaml',
     'examples/AGENTS.md.snippet',
     'examples/CLAUDE.md.snippet',
+    'examples/category-skill.example.md',
+    'examples/tool-index.SKILL.md',
+    'examples/tool-specific-skill.example.md',
     'references/authoring.md',
+    'references/initial-index.md',
     'references/lifecycle.md',
     'references/route-tests.md',
     'references/runtime-adapters.md',
@@ -396,6 +405,9 @@ try {
     }
     if ($AddRuntimeRules) {
         $installerArguments.Add('AddRuntimeRules', $true)
+    }
+    if ($InitializeRouting) {
+        $installerArguments.Add('InitializeRouting', $true)
     }
     if (-not [string]::IsNullOrWhiteSpace($BackupRoot)) {
         $installerArguments.Add('BackupRoot', $BackupRoot)

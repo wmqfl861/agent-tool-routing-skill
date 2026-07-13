@@ -14,12 +14,38 @@ Determine whether the runtime automatically discovers every installed skill,
 loads only an explicitly named skill, or supports non-discoverable references.
 Record the selected mode in the installed global routing rule.
 
+## Initial Discovery Scope
+
+For an initial index, inspect the effective enabled capabilities registered with
+or discoverable by the selected runtime at user scope and in the active
+workspace. Prefer runtime-native structured listings, then structured active
+configuration and actual discovery roots. Include enabled plugin-provided tools
+and skills, but do not treat disabled plugins or inactive caches as available.
+
+Do not enumerate every `PATH` executable, crawl unrelated workspaces, or infer
+tools from environment-variable names. Do not persist raw command output that
+may contain tokens, headers, cookies, private paths, or credential-bearing URLs;
+parse and redact it first. Record unavailable discovery surfaces and confidence
+limits in the inventory.
+
+Read the pending control request from
+`tool-routing-state/initial-index.json` below the runtime's effective
+configuration root. Store inventory, progress, remote staging, backups, and
+completion evidence below that same configuration root and outside every
+auto-discovered skill, plugin, command, and hook directory. Use runtime-relative
+roots rather than hard-coded Windows, Linux, or macOS paths.
+
 ## Codex, Claude Code, And zcode Default
 
 Use `auto-discovery` unless the concrete installation proves that only Layer 0
 is exposed. Install Layer 0, category skills, and A tool skills according to the
 runtime's supported skill layout. Assume their metadata may independently
 match a request.
+
+Initial indexing does not by itself authorize a strict-progressive migration.
+Keep auto-discovery when existing Layer 1 or Layer 2 skills remain discoverable.
+Migrate only after explicit authorization, backup and collision review, and a
+verification that the resulting runtime exposes Layer 0 alone.
 
 Consequences:
 

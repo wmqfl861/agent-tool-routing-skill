@@ -22,6 +22,47 @@ authenticate an account, change a model/provider, purchase quota, publish
 content, or write to an external system. Obtain authorization for those actions
 from the current user or an existing higher-priority policy.
 
+## Initial Index After Installation
+
+The quick-install commands use `-InitializeRouting` as explicit authorization
+for one initial inventory, public-source research, local Skill work, and routing
+update for the selected Agent. The verified core installer creates a durable
+`pending` request before any indexing begins, or preserves an existing
+resumable request as part of the same transactional install. It does not launch
+another Agent process.
+
+When an Agent invokes installation, it must continue the pending job before
+ordinary work. A direct terminal install leaves the request for the target
+Agent's next fresh turn. Do not assume a running Agent can hot-reload the new
+architecture or global rules or finish indexing in the installation turn. The
+Agent that processes the request publishes phase progress.
+
+The index covers enabled capabilities registered with or discoverable by the
+target Agent. Depending on what the runtime exposes, this can include MCP
+servers, plugin-provided tools and skills, configured CLI/API integrations, and
+built-in capabilities needed to explain exclusions. It does not mean every
+executable on `PATH`, every workspace, disabled plugins, dormant backups, or
+credentials inferred from environment-variable names.
+
+Publish progress for discovery, inventory, local Skill matching,
+classification, official-source research, guide review or authoring, route
+construction, and validation. Use a durable state so a blocked, interrupted,
+or failed job can resume without repeating verified remote work.
+
+For the resulting index:
+
+- route every resolved A capability through an existing reviewed Layer 2;
+- route every B helper through complete Layer 1 guidance;
+- retain every C capability in the inventory with its exclusion rationale, but
+  keep it outside the active routing tree;
+- add Layer 0 entries only for meaningful user-intent categories represented
+  by active A or B capabilities.
+
+Do not activate the generated runtime tree while any A capability lacks a
+usable guide. If source ownership or evidence is insufficient, mark the job
+`blocked` or `needs-input`, preserve its state, report the missing evidence,
+and return to normal conversation.
+
 ## Identify the Capability
 
 Record:
@@ -155,6 +196,35 @@ Before enabling a remotely sourced skill:
 If no trustworthy official skill exists, write a minimal local Layer 2 skill
 from verified documentation. Preserve source links and version assumptions;
 do not copy executable instructions blindly.
+
+For an automatically remediated missing A guide, the same staging rule applies:
+first check local and tool-bundled Skills, then resolve the canonical official
+repository, pin an exact revision, stage outside auto-discovery, and review the
+candidate before activation. Never install the first similarly named GitHub
+search result directly into a live Skill root.
+
+If the canonical project does not provide a suitable Skill, author only from
+sufficient reviewed official README/documentation, repository examples, local
+CLI help or status output, and already exposed schemas. Do not invent commands,
+permissions, authentication behavior, or safety boundaries to make indexing
+appear complete.
+
+## Future Tools
+
+During an Agent-mediated lifecycle operation, when a newly added A capability
+has no usable local or bundled guide and the current onboarding request has not
+already authorized remediation, ask once which action to take:
+
+1. Search the canonical official repository or documentation, stage a pinned
+   candidate, review it, and install it if it passes.
+2. Author a minimal local Layer 2 from sufficient reviewed official sources.
+3. Leave the capability unrouted.
+
+Leaving it unrouted is a valid safe outcome. Do not call that A capability from
+memory, and do not silently enable its plugin, MCP server, authentication, or
+provider settings. This question is not a universal install hook. Process tools
+added outside an Agent lifecycle task during the next explicit onboarding sync
+or index.
 
 ## Offboard Removed Tools
 

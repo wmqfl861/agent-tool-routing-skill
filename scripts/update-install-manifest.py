@@ -17,6 +17,9 @@ FIXED_FILES = (
     "SKILL.md",
     "examples/AGENTS.md.snippet",
     "examples/CLAUDE.md.snippet",
+    "examples/category-skill.example.md",
+    "examples/tool-index.SKILL.md",
+    "examples/tool-specific-skill.example.md",
     "scripts/install.ps1",
 )
 PAYLOAD_DIRECTORIES = ("agents", "references")

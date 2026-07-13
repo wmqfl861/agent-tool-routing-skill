@@ -57,6 +57,9 @@ REMOTE_FIXED_PAYLOAD = (
     "SKILL.md",
     "examples/AGENTS.md.snippet",
     "examples/CLAUDE.md.snippet",
+    "examples/category-skill.example.md",
+    "examples/tool-index.SKILL.md",
+    "examples/tool-specific-skill.example.md",
     "scripts/install.ps1",
 )
 REMOTE_PAYLOAD_DIRECTORIES = ("agents", "references")
@@ -184,7 +187,7 @@ def build_remote_install_command(
             "if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() "
             "-ne $h){throw 'Installer SHA-256 verification failed.'};"
             "& ([scriptblock]::Create([IO.File]::ReadAllText($p))) "
-            f"-Target {target}" +
+            f"-Target {target} -InitializeRouting" +
             "}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}"
         )
 
@@ -196,7 +199,7 @@ def build_remote_install_command(
         "--connect-timeout 30 --max-time 60 --limit-rate 128K "
         f"--max-filesize {REMOTE_BOOTSTRAP_MAXIMUM_BYTES} -fsSL '{url}' -o \"$p\";"
         f"printf '%s  %s\\n' '{bootstrap_hash}' \"$p\" | {checksum_command} >/dev/null;"
-        f"pwsh -NoProfile -File \"$p\" -Target {target})"
+        f"pwsh -NoProfile -File \"$p\" -Target {target} -InitializeRouting)"
     )
 
 
@@ -631,7 +634,7 @@ def validate_repository_contract(validation: Validation) -> None:
             install_sections = find_markdown_sections(
                 text,
                 2,
-                "Install Architecture and Onboarding",
+                "Install, Onboard, and Initialize Routing",
             )
             if len(install_sections) != 1:
                 validation.error(
@@ -701,6 +704,7 @@ def validate_repository_contract(validation: Validation) -> None:
             "AddOnboardingRules",
             "AddRuntimeRules",
             "AddGlobalRules",
+            "InitializeRouting",
             "CodexHome",
             "ClaudeConfigDir",
             "ZcodeHome",
@@ -735,8 +739,15 @@ def validate_repository_contract(validation: Validation) -> None:
                     f"missing cross-platform contract: {description}",
                 )
 
+    pester_test_count: int | None = None
     tests_text = read_utf8(ROOT / "tests" / "install.Tests.ps1", validation)
     if tests_text is not None:
+        pester_test_count = len(re.findall(r"(?m)^\s+It\s+['\"]", tests_text))
+        if pester_test_count == 0:
+            validation.error(
+                ROOT / "tests" / "install.Tests.ps1",
+                "must contain at least one Pester It block",
+            )
         for requirement, description in (
             ("VERSION", "installed version test"),
             ("EXPECTED_TEST_OS", "CI runner identity assertion"),
@@ -748,6 +759,7 @@ def validate_repository_contract(validation: Validation) -> None:
             ("SourceRoot", "verified local payload test path"),
             ("remote-payload-tamper", "payload tampering rejection test"),
             ("remote-manifest-tamper", "manifest tampering rejection test"),
+            ("initial-index.json", "pending initial-index state tests"),
         ):
             if requirement not in tests_text:
                 validation.error(
@@ -774,10 +786,31 @@ def validate_repository_contract(validation: Validation) -> None:
                 ROOT / ".github" / "workflows" / "ci.yml",
                 "GitHub Actions does not allow matrix context in a step shell field",
             )
-        if ci_text.count("$result.PassedCount -ne 43") != 3:
+        expected_count_match = re.search(
+            r"(?m)^\s*EXPECTED_PESTER_TESTS:\s*(\d+)\s*$",
+            ci_text,
+        )
+        if expected_count_match is None:
             validation.error(
                 ROOT / ".github" / "workflows" / "ci.yml",
-                "every Pester job must require exactly 43 passing tests",
+                "CI must define EXPECTED_PESTER_TESTS",
+            )
+        elif (
+            pester_test_count is not None
+            and int(expected_count_match.group(1)) != pester_test_count
+        ):
+            validation.error(
+                ROOT / ".github" / "workflows" / "ci.yml",
+                "EXPECTED_PESTER_TESTS must match the Pester It-block count "
+                f"({pester_test_count})",
+            )
+        count_assertion = (
+            "$result.PassedCount -ne [int]$env:EXPECTED_PESTER_TESTS"
+        )
+        if ci_text.count(count_assertion) != 3:
+            validation.error(
+                ROOT / ".github" / "workflows" / "ci.yml",
+                "every Pester job must enforce EXPECTED_PESTER_TESTS",
             )
 
     snippet_paths = (
@@ -798,6 +831,23 @@ def validate_repository_contract(validation: Validation) -> None:
             snippet_paths[1],
             "Claude and AGENTS snippets must remain text-identical",
         )
+
+    initial_index_path = ROOT / "references" / "initial-index.md"
+    initial_index_text = read_utf8(initial_index_path, validation)
+    if initial_index_text is not None:
+        for requirement, description in (
+            ("tool-routing-state/initial-index.json", "external pending-request path"),
+            ("registered and discoverable capabilities", "bounded Agent discovery scope"),
+            ("unresolved_a_tools", "unresolved A activation gate"),
+            ("exact commit SHA", "remote Skill provenance pin"),
+            ("[####------]", "portable phase progress"),
+            ("Return to the user's normal conversation", "conversation return contract"),
+        ):
+            if requirement not in initial_index_text:
+                validation.error(
+                    initial_index_path,
+                    f"missing initial-index contract: {description}",
+                )
 
     route_tests_text = read_utf8(ROOT / "references" / "route-tests.md", validation)
     if route_tests_text is not None:

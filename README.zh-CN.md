@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-v0.1.5-167D8D)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.2.0-167D8D)](CHANGELOG.md)
 [![CI](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4B5563)](#平台支持)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2E7D32)](LICENSE)
@@ -14,7 +14,7 @@ Agent Tool Routing Skill 为 Codex、Claude Code、zcode 及兼容 Agent 提供�
 的工具路由模型，避免把大量重叠工具平铺在全局提示中。同时，它也为 CLI、MCP
 Server、Plugin、Skill、API 集成、PATH 配置等能力定义带安全门槛的完整生命周期。
 
-> 当前版本：**v0.1.5**。项目仍处于 1.0 之前；应用到共享或生产 Agent 环境前，
+> 当前版本：**v0.2.0**。项目仍处于 1.0 之前；应用到共享或生产 Agent 环境前，
 > 请先审阅版本差异。
 
 ## 为什么需要这个项目
@@ -40,27 +40,50 @@ Server、Plugin、Skill、API 集成、PATH 配置等能力定义带安全门槛
 | 分层路由架构 | 分离目录、分类和具体工具决策。 |
 | 工具生命周期门禁 | 统一管理安装、更新、修复、删除和替换。 |
 | 基于风险的 A/B/C 分类 | 为复杂或高影响工具配置相应安全说明。 |
+| 首次路由索引 | 盘点已注册能力，并生成经过审阅且可恢复的路由树。 |
 | Runtime 适配 | 支持自动发现和显式 strict-progressive 部署。 |
 | 跨平台安装器 | 支持 Codex、Claude Code、zcode 或同时安装。 |
 | 事务式恢复 | 先预检、再快照和 staging，失败时安全回滚。 |
 | 路由测试契约 | 验证正向路由、fallback、负向路由和结构完整性。 |
 
-## 两类独立能力
+## 架构、初始化与运行时
 
-安装器明确区分 onboarding 与 runtime 行为。
+安装器把核心安装、首次索引和普通 runtime 行为划分为独立的授权与验证边界。
 
 ### 架构与 onboarding
 
 安装本仓库的架构 Skill，并可选写入一条简短门禁，用于工具安装、配置、修复、
 删除和路由维护。此模式不依赖 `tool-index`。
 
+### 首次路由索引
+
+`-InitializeRouting` 明确请求执行一次性工具盘点和路由构建。经过校验的安装器会先
+在核心安装的同一事务式恢复边界内创建持久的 `pending` 请求，或保留已有的可恢复
+请求。安装器只把任务加入队列，不会启动另一个 Agent 进程。
+
+如果安装命令由 Agent 调用，该 Agent 必须在普通工作前继续处理 pending 任务；如果
+命令直接在终端运行，则由目标 Agent 的下一次新会话在普通工作前接手。正在运行的
+Agent 不保证热加载刚安装的 Skill 或全局说明，因此不保证在安装当轮完成索引。
+
+索引范围是目标 Agent 已注册或可发现的能力，包括 runtime 能够公开的已启用 MCP
+Server、Plugin、Skill 和已配置集成。它不会把 `PATH` 中的每个可执行文件都当作
+Agent 工具，也不会扫描无关工作区。已解析的 A、B 类能力按用户意图加入路由；C 类
+原语只记录在清单中，并保留不进入路由的理由。
+
+处理任务的 Agent 会在盘点、分类、检索、构建和验证过程中发布稳定的阶段进度。在
+由 Agent 执行的工具生命周期操作中，如果新增 A 类能力没有可用的本地或工具自带
+指南，onboarding 会询问一次：搜索并审阅规范的官方来源、根据充分且经过审阅的官方
+文档编写，或让该能力保持未路由。由 Agent 生命周期流程之外新增的工具，会在下一次
+显式 onboarding 同步或索引时发现。
+
 ### Runtime 路由
 
 写入运行时工具选择规则。仅当每个目标 Agent 已拥有完整路由树时启用，包括
 `skills/tool-index/SKILL.md` 以及它引用的全部分类和工具 Skill。
 
-安装本仓库**不会**自动生成生产可用的 `tool-index`、分类树或工具清单。
-`examples/` 中的文件是模板，不是完整部署。
+仅安装架构时**不会**生成生产可用的 `tool-index`、分类树或工具清单。
+`-InitializeRouting` 会请求 Agent 根据当前有效环境生成这些内容；`examples/` 仍是
+模板，不是预制的完整部署。
 
 ## 路由模型
 
@@ -88,10 +111,11 @@ strict-progressive 部署可以只暴露 Layer 0，把下层说明放在 referen
 - 仅运行仓库 validator 时需要 Python 3 和 PyYAML。
 - 仅运行安装器测试时需要 Pester 5.7.1。
 
-根据操作系统和 Agent 选择一条命令。每条命令只为对应 Agent 安装架构 Skill 和
-onboarding 门禁，可在任意目录执行，不需要 Git。
+根据操作系统和 Agent 选择一条命令。每条命令会为对应 Agent 安装经过校验的架构
+Skill 和 onboarding 门禁，然后创建一次性的首次路由初始化请求。命令可在任意目录
+执行，不需要 Git。
 
-命令固定到 `v0.1.5`：先把 bootstrap 下载到私有临时文件，在执行前核对命令内置
+命令固定到 `v0.2.0`：先把 bootstrap 下载到私有临时文件，在执行前核对命令内置
 的 SHA-256；bootstrap 随后核对代码中锚定的 manifest，并逐个校验全部运行文件，
 最后才调用事务安装器。这里没有把未经校验的网络内容直接管道执行。
 
@@ -102,19 +126,19 @@ onboarding 门禁，可在任意目录执行，不需要 Git。
 #### Codex
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 #### Claude Code
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 #### zcode
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
@@ -124,19 +148,19 @@ $u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/s
 #### Codex
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
 #### Claude Code
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 #### zcode
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
 ```
 
 ### macOS
@@ -146,30 +170,46 @@ $u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/s
 #### Codex
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
 #### Claude Code
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 #### zcode
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
 ```
 
-bootstrap 默认写入 onboarding 规则，明确不会自动启用 runtime routing。它遵循
-`CODEX_HOME`、`CLAUDE_CONFIG_DIR` 和 `ZCODE_HOME`。重复执行同一条命令时，仍通过
-现有快照、staging 和 rollback 流程进行经过验证的刷新。
+完成核心安装后，`-InitializeRouting` 会以事务方式写入或保留一次性的 `pending`
+请求，不会启动另一个 Agent。调用安装命令的 Agent 必须在普通工作前继续处理该
+任务；如果直接在终端安装，则由目标 Agent 的下一次新会话接手。不能保证正在运行的
+Agent 热加载新 Skill 或全局说明，也不保证在安装当轮完成索引。
+
+索引器先检查本地和工具自带 Skill。A 类缺少指南时，官方候选必须固定版本、下载到
+自动发现范围之外并完成审阅后才能启用；没有合格官方 Skill 时，可以根据充分且经过
+审阅的官方文档编写最小指南。如果无法确认官方来源或证据不足，该 A 类能力会保持
+未解决，新生成的 runtime 路由树不会启用。重复执行仍保留快照、staging、rollback
+和可恢复任务的保护措施。
 
 ## 高级本地安装
 
 离线安装、自定义目录或启用 runtime 规则时，使用经过审阅的本地 checkout。以下
 示例从仓库根目录执行，Windows、Linux 和 macOS 均可使用 PowerShell 7；使用
 Windows PowerShell 5.1 时，将 `pwsh` 替换为 `powershell.exe`。
+
+从本地 checkout 安装并创建同样的首次索引请求：
+
+```powershell
+pwsh -NoProfile -File ./scripts/install.ps1 -Target all -InitializeRouting
+```
+
+本地安装器同样只把持久请求加入队列。处理该请求的 Agent 会发布索引进度，并且只在
+成功完成后删除请求。
 
 实时路由树准备完成后，再启用 runtime 规则：
 

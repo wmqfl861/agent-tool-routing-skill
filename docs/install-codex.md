@@ -4,9 +4,9 @@ Codex installs this repository under the compatibility name
 `tool-use-architecture`. The installer converts both skill metadata and global
 rule references automatically.
 
-## Install Architecture and Onboarding
+## Install, Onboard, and Initialize Routing
 
-Choose the one command for your platform. It is pinned to `v0.1.5`, verifies
+Choose the one command for your platform. It is pinned to `v0.2.0`, verifies
 the bootstrap and every payload file before execution, and can run from any
 directory without Git.
 
@@ -16,24 +16,37 @@ supported Windows release that provides `curl.exe`.
 ### Windows
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
 ### macOS
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
-This installs the architecture skill and adds only the tool lifecycle gate. It
-does not activate ordinary runtime routing, so it is safe when no `tool-index`
-has been built yet.
+After the verified core install, `-InitializeRouting` transactionally records a
+durable one-shot request or preserves an existing resumable request. It does not
+launch another Codex process. A Codex session that invoked the installer must
+continue the pending job before ordinary work; after a direct terminal install,
+the next fresh Codex turn consumes it. A running session is not guaranteed to
+hot-reload new skills or global instructions or complete indexing in the
+installation turn. The Codex session processing the job emits phase progress.
+
+The job inventories capabilities registered with or discoverable by Codex, not
+every executable on `PATH`. It routes resolved A and B capabilities by intent
+and records C primitives as inventory-only. Missing A guides are checked first
+against local or bundled Skills, then against a pinned canonical official
+source staged outside auto-discovery and reviewed before activation. A minimal
+guide may be authored from sufficient reviewed official documentation. If
+evidence is insufficient, the job remains resumable and the generated runtime
+tree stays inactive.
 
 ## Configuration Root
 
@@ -74,7 +87,10 @@ The resulting paths are:
 
 ## Activate Runtime Routing
 
-First create and validate the live routing tree. At minimum, Codex must have:
+The initial-index job activates runtime routing only after its complete tree
+passes validation. For an architecture-only installation or a manually built
+tree, first create and validate the live routing tree. At minimum, Codex must
+have:
 
 ```text
 <CodexHome>/skills/tool-index/SKILL.md
@@ -136,58 +152,23 @@ pwsh -NoProfile -File ./scripts/install.ps1 \
 Use Windows PowerShell 5.1 or PowerShell 7 on Windows. Linux and macOS require
 PowerShell 7.2 or later.
 
-## Manual Recovery Install
+## Recovery and Reinstallation
 
-Prefer the installer. It handles encoding, path safety, marker validation,
-Codex naming, backup isolation, and rollback.
-
-If a manual recovery is unavoidable, build a unique staging directory and
-replace the target as a unit. Do not recursively copy `agents/` into an existing
-target because a second run can create `agents/agents/openai.yaml`.
+Use the verified one-command installer or a reviewed local checkout instead of
+reconstructing the installed directory manually:
 
 ```powershell
-$codexHome = if ($env:CODEX_HOME) {
-  $env:CODEX_HOME
-} else {
-  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex'
-}
-$target = Join-Path $codexHome 'skills/tool-use-architecture'
-$stage = Join-Path ([IO.Path]::GetTempPath()) (
-  'tool-use-architecture-' + [guid]::NewGuid().ToString('N')
-)
-
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-Copy-Item -LiteralPath './SKILL.md' -Destination (Join-Path $stage 'SKILL.md')
-Copy-Item -LiteralPath './agents' -Destination (Join-Path $stage 'agents') -Recurse
-Copy-Item -LiteralPath './references' -Destination (Join-Path $stage 'references') -Recurse
-
-$utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
-foreach ($file in @(
-  (Join-Path $stage 'SKILL.md'),
-  (Join-Path $stage 'agents/openai.yaml')
-)) {
-  $text = [IO.File]::ReadAllText($file)
-  $text = [regex]::Replace(
-    $text,
-    '(?m)^name:\s*tool-routing-architecture\s*$',
-    'name: tool-use-architecture'
-  )
-  $text = $text.Replace('$tool-routing-architecture', '$tool-use-architecture')
-  $text = $text.Replace('`tool-routing-architecture`', '`tool-use-architecture`')
-  [IO.File]::WriteAllText($file, $text, $utf8)
-}
-
-if (Test-Path -LiteralPath $target) {
-  $backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
-  Copy-Item -LiteralPath $target -Destination $backup -Recurse
-  Remove-Item -LiteralPath $target -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-Move-Item -LiteralPath $stage -Destination $target
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -InitializeRouting
 ```
 
-Use the installer for global rules. Hand-editing marker blocks risks deleting
-or duplicating existing instructions.
+The transactional installer includes `VERSION`, `SKILL.md`, `agents/`, all
+references, and the complete `examples/` template set. It also performs the
+required Codex compatibility conversion, preserves a resumable initial-index
+request, manages global-rule markers, creates an isolated backup, and prints a
+rollback path. A hand-written partial copy can omit required templates or leave
+generic `tool-routing-architecture` names in the Codex installation.
+
+To restore a retained snapshot instead, run its generated `rollback.ps1`.
 
 ## Validate
 

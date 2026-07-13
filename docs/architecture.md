@@ -26,6 +26,40 @@ Global rules stay short. They identify when routing applies, name the deployed
 runtime mode, preserve primitive bypasses, and state the authorization boundary.
 They do not duplicate the complete architecture or tool documentation.
 
+## Initial Routing Index
+
+Initial indexing is an explicitly authorized, one-shot onboarding operation,
+not background monitoring. `-InitializeRouting` performs a verified core
+installation and transactionally creates a durable `pending` request, or
+preserves an existing resumable request, before discovery begins. It does not
+launch another Agent process.
+
+An Agent that invokes installation must continue the request before ordinary
+work. A direct terminal installation leaves it for the target Agent's next
+fresh turn. A running Agent is not guaranteed to hot-reload new skills or
+global rules, so same-turn processing is not guaranteed. The Agent that
+processes the request emits phase progress and returns to ordinary conversation
+after recording a terminal or resumable state.
+
+The effective discovery boundary is the target Agent, not the whole machine.
+Inventory capabilities that are enabled and registered with or discoverable by
+that Agent: MCP servers, plugin-provided capabilities, skills, configured
+CLI/API integrations, and relevant built-ins where the runtime exposes them.
+Do not scan every executable on `PATH`, unrelated workspaces, disabled plugins,
+backup configurations, or arbitrary environment variables.
+
+Initial indexing records all classified capabilities but routes them
+differently:
+
+- A capabilities require a reviewed Layer 2 guide before their Layer 1 route
+  can become active.
+- B helpers receive complete low-risk guidance in Layer 1.
+- C primitives remain inventory-only and outside the active routing tree.
+
+The resulting runtime tree remains inactive if any A capability is unresolved.
+The durable job records progress, evidence, staging, backup, and a resumable
+`blocked` or `needs-input` state instead of claiming incomplete coverage.
+
 ## Documentation Layers
 
 | Layer | Owner | Responsibility |
@@ -153,6 +187,14 @@ and exact commit SHA or a verified release-artifact digest, record provenance,
 inspect executable commands and file/network/credential scope, and review
 updates as diffs before activation.
 
+During initial indexing, search the canonical official source for a maintained
+Skill only after local and tool-bundled candidates have been checked. A search
+result or an `official` label is not sufficient provenance. If no suitable
+candidate exists, a minimal Layer 2 may be authored from sufficient reviewed
+official documentation and read-only local evidence. If ownership, interface,
+or safety behavior cannot be established, leave that A capability unresolved
+and keep the generated runtime tree inactive.
+
 ## Lifecycle
 
 For a new capability:
@@ -166,6 +208,15 @@ For a new capability:
 6. For C, leave the routing tree unchanged.
 7. Update Layer 0 only for a genuinely new intent category.
 8. Validate paths, metadata, health, route behavior, and rollback.
+
+During an Agent-mediated lifecycle operation, when a newly added A capability
+has no usable local or bundled guide and the current request has not already
+authorized remediation, ask once whether to search and review the canonical
+official source, author a guide from reviewed official documentation, or leave
+the capability installed but unrouted. The last choice means ordinary runtime
+must not call it through this architecture. Additions made outside an Agent
+lifecycle operation are discovered during the next explicit onboarding sync or
+index; this architecture is not a background watcher.
 
 Removal reverses the routing work: remove active routes, retire unused guides,
 clean aliases and config references, record retained credentials/data, and run

@@ -217,6 +217,23 @@ function New-ToolIndexDependency {
     [IO.File]::WriteAllText($path, "---`nname: tool-index`n---`n")
     return $path
 }
+
+function Assert-PendingInitialIndexState {
+    param(
+        [string]$ConfigRoot,
+        [string]$TargetAgent
+    )
+
+    $statePath = Join-TestPath $ConfigRoot @('tool-routing-state', 'initial-index.json')
+    Assert-True (Test-Path -LiteralPath $statePath -PathType Leaf)
+    $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
+    Assert-Equal ([int]$state.schema_version) 1
+    Assert-Equal ([string]$state.status) 'pending'
+    Assert-Equal ([string]$state.target_agent) $TargetAgent
+    Assert-Equal ([string]$state.project_version) $projectVersion
+    Assert-Equal ([string]$state.runtime_mode) 'auto-discovery'
+    Assert-Equal ([string]$state.scope) 'registered-capabilities'
+}
 }
 
 Describe 'scripts/install.ps1' {
@@ -252,6 +269,9 @@ Describe 'scripts/install.ps1' {
         Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
         Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
         Assert-True ($global.Contains('`tool-use-architecture`'))
+        Assert-False (Test-Path -LiteralPath (
+            Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+        ))
 
         $bytes = [IO.File]::ReadAllBytes($layout.Global)
         Assert-False (($bytes.Length -ge 3) -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
@@ -267,6 +287,168 @@ Describe 'scripts/install.ps1' {
         )
         $genericMatches = @(Select-String -Path $installedFiles -Pattern 'tool-routing-architecture' -ErrorAction SilentlyContinue)
         Assert-Equal $genericMatches.Count 0
+    }
+
+    It 'initializes pending routing state without activating runtime routing' {
+        $layout = New-InstallLayout 'initialize-routing'
+
+        $output = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup `
+            -InitializeRouting | Out-String
+
+        Assert-PendingInitialIndexState -ConfigRoot $layout.Config -TargetAgent 'codex'
+        Assert-True ($output.Contains('process the request before returning to ordinary work'))
+        Assert-False ($output.Contains('Starting the codex'))
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Skill 'state'))
+        $global = [IO.File]::ReadAllText($layout.Global)
+        Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
+        Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
+        Assert-False (Test-Path -LiteralPath (
+            Join-TestPath $layout.Config @('skills', 'tool-index')
+        ))
+    }
+
+    It 'removes an unchanged installer-created request during rollback' {
+        $layout = New-InstallLayout 'rollback-initial-index'
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
+
+        $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+        Assert-True (Test-Path -LiteralPath $statePath -PathType Leaf)
+        $snapshot = @(Get-SnapshotDirectories $layout.Backup)[0]
+        $rollback = Join-Path $snapshot.FullName 'rollback.ps1'
+
+        $null = & $rollback
+
+        Assert-False (Test-Path -LiteralPath $statePath)
+        Assert-False (Test-Path -LiteralPath $layout.Skill)
+        Assert-False (Test-Path -LiteralPath $layout.Global)
+    }
+
+    It 'preserves a progressed initial-index request during rollback' {
+        $layout = New-InstallLayout 'rollback-progressed-initial-index'
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
+
+        $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+        $request = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
+        $request.status = 'inventory'
+        $request.phase = 'inventory'
+        $progressedText = ($request | ConvertTo-Json -Depth 4) + "`n"
+        [IO.File]::WriteAllText($statePath, $progressedText, (New-Object Text.UTF8Encoding $false))
+        $before = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+        $snapshot = @(Get-SnapshotDirectories $layout.Backup)[0]
+        $rollback = Join-Path $snapshot.FullName 'rollback.ps1'
+
+        $output = & $rollback 3>&1 | Out-String
+
+        Assert-True (Test-Path -LiteralPath $statePath -PathType Leaf)
+        $after = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+        Assert-Equal $after $before
+        Assert-True ($output.Contains('changed after installation'))
+        Assert-False (Test-Path -LiteralPath $layout.Skill)
+        Assert-False (Test-Path -LiteralPath $layout.Global)
+    }
+
+    It 'rejects initialization when an unmanaged onboarding section cannot poll state' {
+        $layout = New-InstallLayout 'unmanaged-onboarding-initialization'
+        New-Item -ItemType Directory -Path $layout.Config -Force | Out-Null
+        [IO.File]::WriteAllText(
+            $layout.Global,
+            "## Tool Onboarding Gate`n`nCustom unmanaged instructions.`n"
+        )
+
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('requires a managed Tool Onboarding Gate'))
+        Assert-False (Test-Path -LiteralPath $layout.Skill)
+        Assert-False (Test-Path -LiteralPath (
+            Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+        ))
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
+    }
+
+    It 'preserves a resumable initial-index request across architecture refresh' {
+        $layout = New-InstallLayout 'preserve-initial-index'
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
+
+        $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+        $request = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
+        $request.status = 'blocked'
+        $request.phase = 'sourcing'
+        $request.unresolved_a_tools = @('missing-a-guide')
+        $stateText = ($request | ConvertTo-Json -Depth 4) + "`n"
+        [IO.File]::WriteAllText($statePath, $stateText, (New-Object Text.UTF8Encoding $false))
+        $before = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+
+        $after = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+        Assert-Equal $after $before
+        $preserved = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
+        Assert-Equal ([string]$preserved.request_id) ([string]$request.request_id)
+        Assert-Equal ([string]$preserved.status) 'blocked'
+        Assert-Equal ([string]$preserved.unresolved_a_tools[0]) 'missing-a-guide'
+    }
+
+    It 'rejects non-array and non-string initial-index list fields before writes' {
+        $cases = @(
+            [pscustomobject]@{ Name = 'completed-null'; Field = 'completed_phases'; Value = $null },
+            [pscustomobject]@{ Name = 'completed-number'; Field = 'completed_phases'; Value = 1 },
+            [pscustomobject]@{ Name = 'completed-object'; Field = 'completed_phases'; Value = [pscustomobject]@{ phase = 'inventory' } },
+            [pscustomobject]@{ Name = 'completed-mixed'; Field = 'completed_phases'; Value = @('inventory', 1) },
+            [pscustomobject]@{ Name = 'unresolved-null'; Field = 'unresolved_a_tools'; Value = $null },
+            [pscustomobject]@{ Name = 'unresolved-number'; Field = 'unresolved_a_tools'; Value = 1 },
+            [pscustomobject]@{ Name = 'unresolved-object'; Field = 'unresolved_a_tools'; Value = [pscustomobject]@{ tool = 'example' } },
+            [pscustomobject]@{ Name = 'unresolved-mixed'; Field = 'unresolved_a_tools'; Value = @('example', 1) }
+        )
+
+        foreach ($case in $cases) {
+            $layout = New-InstallLayout ("invalid-index-list-" + $case.Name)
+            $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+            New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force | Out-Null
+            $request = [ordered]@{
+                schema_version = 1
+                request_id = [guid]::NewGuid().ToString('N')
+                status = 'pending'
+                target_agent = 'codex'
+                project_version = $projectVersion
+                runtime_mode = 'auto-discovery'
+                scope = 'registered-capabilities'
+                completed_phases = @()
+                unresolved_a_tools = @()
+            }
+            $request[$case.Field] = $case.Value
+            $stateText = ($request | ConvertTo-Json -Depth 4) + "`n"
+            [IO.File]::WriteAllText($statePath, $stateText, (New-Object Text.UTF8Encoding $false))
+
+            $threw = $false
+            try {
+                $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                    -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+            } catch {
+                $threw = $true
+                $errorMessage = $_.Exception.Message
+            }
+
+            Assert-True $threw
+            Assert-True ($errorMessage.Contains('metadata is invalid'))
+            Assert-False (Test-Path -LiteralPath $layout.Backup)
+            Assert-False (Test-Path -LiteralPath $layout.Skill)
+            Assert-False (Test-Path -LiteralPath $layout.Global)
+        }
     }
 
     It 'preflights a missing runtime dependency before any target or backup change' {
@@ -1239,6 +1421,48 @@ Describe 'scripts/install-remote.ps1' {
         Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
             $_.Name -like 'agent-tool-routing-*'
         }).Count 0
+    }
+
+    It 'queues routing initialization for all targets' {
+        $layout = New-InstallLayout 'remote-initialize-routing'
+        $codexRoot = Join-Path $layout.Root 'codex-config'
+        $claudeRoot = Join-Path $layout.Root 'claude-config'
+        $zcodeRoot = Join-Path $layout.Root 'zcode-config'
+
+        $null = & $remoteInstaller -Target all -SourceRoot $repoRoot `
+            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $codexRoot -ClaudeConfigDir $claudeRoot -ZcodeHome $zcodeRoot `
+            -BackupRoot $layout.Backup -InitializeRouting
+
+        $targets = @(
+            [pscustomobject]@{
+                Name = 'codex'
+                Root = $codexRoot
+                Skill = Join-TestPath $codexRoot @('skills', 'tool-use-architecture')
+                Global = Join-Path $codexRoot 'AGENTS.md'
+            },
+            [pscustomobject]@{
+                Name = 'claude'
+                Root = $claudeRoot
+                Skill = Join-TestPath $claudeRoot @('skills', 'tool-routing-architecture')
+                Global = Join-Path $claudeRoot 'CLAUDE.md'
+            },
+            [pscustomobject]@{
+                Name = 'zcode'
+                Root = $zcodeRoot
+                Skill = Join-TestPath $zcodeRoot @('skills', 'tool-routing-architecture')
+                Global = Join-Path $zcodeRoot 'AGENTS.md'
+            }
+        )
+        foreach ($target in $targets) {
+            Assert-PendingInitialIndexState -ConfigRoot $target.Root -TargetAgent $target.Name
+            $global = [IO.File]::ReadAllText($target.Global)
+            Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
+            Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
+            Assert-False (Test-Path -LiteralPath (
+                Join-TestPath $target.Root @('skills', 'tool-index')
+            ))
+        }
     }
 
     It 'forwards Claude Code and zcode targets without installing other agents' {

@@ -2,9 +2,9 @@
 
 Claude Code installs this repository as `tool-routing-architecture`.
 
-## Install Architecture and Onboarding
+## Install, Onboard, and Initialize Routing
 
-Choose the one command for your platform. It is pinned to `v0.1.5`, verifies
+Choose the one command for your platform. It is pinned to `v0.2.0`, verifies
 the bootstrap and every payload file before execution, and can run from any
 directory without Git.
 
@@ -14,23 +14,38 @@ supported Windows release that provides `curl.exe`.
 ### Windows
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1';$h='1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 ### macOS
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.1.5/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '1063ae1e7d771f456419a3e583401e9054e03c93b659c2e38bf53d0d92dcd2df' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
-This installs the architecture skill and lifecycle gate without activating
-ordinary runtime routing.
+After the verified core install, `-InitializeRouting` transactionally records a
+durable one-shot request or preserves an existing resumable request. It does not
+launch another Claude Code process. A Claude Code session that invoked the
+installer must continue the pending job before ordinary work; after a direct
+terminal install, the next fresh Claude Code turn consumes it. A running
+session is not guaranteed to hot-reload new skills or global instructions or
+complete indexing in the installation turn. The Claude Code session processing
+the job emits phase progress.
+
+The job inventories capabilities registered with or discoverable by Claude
+Code, not every executable on `PATH`. It routes resolved A and B capabilities
+by intent and records C primitives as inventory-only. Missing A guides are
+checked first against local or bundled Skills, then against a pinned canonical
+official source staged outside auto-discovery and reviewed before activation. A
+minimal guide may be authored from sufficient reviewed official documentation.
+If evidence is insufficient, the job remains resumable and the generated
+runtime tree stays inactive.
 
 ## Configuration Root
 
@@ -71,7 +86,9 @@ The resulting paths are:
 
 ## Activate Runtime Routing
 
-Runtime routing requires this live file and all skills it references:
+The initial-index job activates runtime routing only after its complete tree
+passes validation. For an architecture-only installation or a manually built
+tree, runtime routing requires this live file and all skills it references:
 
 ```text
 <ClaudeConfigDir>/skills/tool-index/SKILL.md
@@ -111,38 +128,22 @@ copied tree.
 On Linux and macOS, symlink aliases are resolved for overlap comparisons and
 existing global-file modes are preserved through install and rollback.
 
-## Manual Recovery Install
+## Recovery and Reinstallation
 
-Prefer the installer. For manual recovery, use a unique staging directory and
-replace the target directory as a unit. This makes repeated copies idempotent
-and prevents a nested `agents/agents` directory.
+Use the verified one-command installer or a reviewed local checkout instead of
+reconstructing the installed directory manually:
 
 ```powershell
-$claudeHome = if ($env:CLAUDE_CONFIG_DIR) {
-  $env:CLAUDE_CONFIG_DIR
-} else {
-  Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude'
-}
-$target = Join-Path $claudeHome 'skills/tool-routing-architecture'
-$stage = Join-Path ([IO.Path]::GetTempPath()) (
-  'tool-routing-architecture-' + [guid]::NewGuid().ToString('N')
-)
-
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-Copy-Item -LiteralPath './SKILL.md' -Destination (Join-Path $stage 'SKILL.md')
-Copy-Item -LiteralPath './agents' -Destination (Join-Path $stage 'agents') -Recurse
-Copy-Item -LiteralPath './references' -Destination (Join-Path $stage 'references') -Recurse
-
-if (Test-Path -LiteralPath $target) {
-  $backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
-  Copy-Item -LiteralPath $target -Destination $backup -Recurse
-  Remove-Item -LiteralPath $target -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-Move-Item -LiteralPath $stage -Destination $target
+pwsh -NoProfile -File ./scripts/install.ps1 -Target claude -InitializeRouting
 ```
 
-Use the installer, not a hand-written regex, to manage global rule markers.
+The transactional installer includes `VERSION`, `SKILL.md`, `agents/`, all
+references, and the complete `examples/` template set. It preserves a resumable
+initial-index request, manages global-rule markers, creates an isolated backup,
+and prints a rollback path. A hand-written partial copy can omit required
+templates or produce a nested, incomplete installation.
+
+To restore a retained snapshot instead, run its generated `rollback.ps1`.
 
 ## Validate
 
