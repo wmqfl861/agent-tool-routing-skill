@@ -1,4 +1,4 @@
 interface:
   display_name: "Tool Routing Architecture"
-  short_description: "Manage durable tool indexing and intent routes."
-  default_prompt: "Use $tool-routing-architecture to consume an authorized index request, build validated A/B intent routes, and retain C exclusions in managed inventory."
+  short_description: "Manage tool indexing, intent routes, and safe offboarding."
+  default_prompt: "Use $tool-routing-architecture to build validated A/B routes, retain C exclusions, and complete managed offboarding from concise tool-removal requests."

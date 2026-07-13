@@ -248,10 +248,26 @@ must not call it through this architecture. Additions made outside an Agent
 lifecycle operation are discovered during the next explicit onboarding sync or
 index; this architecture is not a background watcher.
 
-Removal reverses the routing work: remove active routes, retire unused guides,
-clean aliases and config references, record retained credentials/data, and run
-a negative route test. Removing only the executable or config entry is
-incomplete.
+An unambiguous current-user request to remove, delete, or uninstall a named
+capability authorizes its complete managed offboarding; the user does not need
+to separately request Skill, inventory, route, or dangling-reference cleanup.
+Removal reverses the routing work: back up affected state, invoke the normal
+removal mechanism only after resolving actual installed provenance and
+inspecting documented side effects, never infer an uninstall command from a
+display name, remove active routes, recompute post-change guide references,
+delete unchanged managed orphans, archive eligible modified or unknown orphans
+outside discovery, prune empty categories, reconcile managed global rules,
+retain an inventory tombstone, clean aliases and config references, record
+protected credentials/data left untouched, and run a negative route test. A
+retained guide must not remain able to select the removed capability.
+
+Ask only to disambiguate identity/scope, authorize unavoidable protected-state
+deletion, expand a single plugin capability to plugin-wide removal, or resolve a
+shared/external guide that cannot be safely isolated. Journal tool removal and
+recoverable managed-state publication as separate phases. Restore active routes
+only after an exact reinstall and health check; otherwise leave the operation
+blocked rather than pointing at a missing capability. Removing only the
+executable or config entry is incomplete.
 
 See [Onboarding New Tools](onboarding-new-tools.md) for the operational
 checklist and `references/` for the agent-facing lifecycle, authoring, runtime

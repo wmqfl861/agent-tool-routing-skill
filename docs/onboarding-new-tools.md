@@ -243,28 +243,68 @@ or index.
 ## Offboard Removed Tools
 
 Removing, disabling, or replacing a tool requires reverse cleanup. The task is
-not complete when the binary, MCP server, plugin, API key, or skill folder is
-removed.
+not complete when only the binary, MCP server, plugin registration, API
+integration/config entry, or Skill folder is removed.
+
+A concise current-user request such as `delete Example Crawler`, `remove
+Example Crawler`, or `uninstall Example Crawler` authorizes this complete
+managed offboarding workflow for the unambiguously identified capability in the
+effective Agent scope. Do not ask the user to repeat the request with Skill,
+inventory, route, global-rule, alias, documentation, or negative-test cleanup.
+If the name maps to multiple capabilities or Agent scopes, ask only the minimum
+disambiguating question and then continue without another authorization prompt.
 
 Action:
 
-1. Identify every public name for the removed capability: tool name, command,
-   MCP server name, plugin id, skill folder, env var, config key, docs path, and
-   replacement tool if any.
-2. Remove the tool from every Layer 1 category that routes to it.
-3. Delete or archive the Layer 2 tool-specific skill when no remaining route
-   uses it.
-4. Remove tool-specific mentions from Layer 0, global instructions, README,
-   docs, examples, current decision lists, and MCP/plugin/CLI/API/PATH config
-   unless the mention is intentionally historical.
-5. If another tool replaces it, update the affected Layer 1 category with the
-   new tool choice and escalation path.
-6. Search the affected skill roots and config files for dangling references to
-   the removed tool's names, commands, env vars, paths, and config keys.
-7. State whether credentials, browser profiles, caches, or local data were
-   removed, kept, or require user action.
-8. Run a negative route test showing a future agent will not select the removed
-   tool.
+1. Read the canonical inventory; identify every public name, package/plugin
+   owner, command, MCP server id, skill folder, env var, config key, docs path,
+   route, replacement, and actual installed source/provenance. Determine Skill
+   management provenance, active references, and live digest relative to the
+   last reviewed digest.
+2. Back up the complete affected route tree, inventory, managed global sections,
+   eligible Skills, and capability config before destructive changes. Record the
+   exact installed version/source and a tested reinstall procedure when one
+   exists. Journal tool removal separately from managed-state publication, and
+   report any exact-rollback limitation before invoking the remover.
+3. Before selecting or invoking any remover, treat a plugin as packaging for
+   separately inventoried capabilities. Do not uninstall the whole plugin when
+   one provided capability was named. If no per-capability mechanism exists,
+   ask whether to expand scope or only disable routing; do not report an
+   uninstall. If the plugin itself was named, offboard each exclusively provided
+   capability and retain capabilities with another active provider.
+4. After plugin scope is resolved, inspect the normal remover's documented side
+   effects and flags before invoking it. Use its least-destructive keep-data,
+   keep-config, or keep-profile mode. If side effects are unverified or
+   protected state must be destroyed, stop before execution and ask only for
+   that additional destructive authorization. Resolve the exact remover from
+   recorded installed provenance and verified official documentation; never
+   infer `pip`, `npm`, `brew`, plugin commands, or uninstall syntax from the
+   display name.
+5. Remove the tool from every Layer 1 category and fallback. Remove Layer 1 or
+   Layer 0 only when the intent category has no remaining active A/B capability.
+6. Recompute every affected guide's post-change active reference count. Delete a
+   zero-reference managed guide only when its digest is unchanged, including a
+   formerly shared guide whose last reference was removed. Move a dedicated
+   modified or ownership-unknown orphan intact to a recoverable archive outside
+   every Agent discovery root when containment and exclusive use are proven.
+   Retain a shared or external guide only when it cannot select the removed
+   capability; otherwise stop with `blocked` or `needs-input`.
+7. Remove active tool mentions from managed global instructions, current
+   decision lists, and MCP/plugin/CLI/API/PATH config. Preserve intentionally
+   historical text.
+8. Commit a tombstone with stable id, former classification, removal time,
+   reason, and artifact dispositions in the same recoverable change as routes
+   and managed global rules.
+9. Search affected roots for dangling names, commands, server ids, paths,
+   environment references, and config keys. Run a negative route test showing a
+   future Agent will not select the removed capability.
+10. If managed-state publication fails after removal, restore active routes only
+    after an exact reinstall and health check. Otherwise keep the capability
+    unrouted, retain a `blocked` or `needs-repair` journal, and report incomplete
+    rollback rather than pointing routes at a missing tool.
+11. Report removed and retained state plus the rollback path. Keep credentials,
+   browser profiles, caches, user data, accounts, shared artifacts, and unrelated
+   capabilities unless the user separately authorizes their deletion.
 
 ## Validation Checklist
 
@@ -279,6 +319,12 @@ Action:
 - Removed tools have no dangling Layer 0, Layer 1, Layer 2, global-rule,
   README, docs, examples, MCP/plugin/CLI/API/PATH, or current decision list
   references.
+- A concise remove/delete/uninstall request starts the full managed offboarding
+  workflow without requiring the user to enumerate dependent cleanup. It asks
+  again only for ambiguous scope, unavoidable protected-state destruction, or a
+  retained guide/plugin boundary that cannot be safely isolated.
+- Every retained discoverable guide fails to select the removed capability;
+  otherwise the operation remains `blocked` or `needs-input`.
 - MCP, CLI, plugin, PATH, or API health checks pass when applicable.
 - Disabled plugins remain disabled unless explicitly approved.
 - Model/provider/API endpoint settings were not changed unless explicitly
@@ -319,9 +365,18 @@ Classification before removal: A.
 
 Cleanup:
 
+- treat the request `delete old-crawler-mcp` as authorization for this complete
+  cleanup without asking for a longer restatement;
+- back up affected routes, inventory, global rules, config, and managed Skills;
+- record the exact installed version and reinstall path, inspect remover side
+  effects, and use its protected-state-preserving mode;
 - remove `old-crawler-mcp` from `read-and-extract-websites`;
-- delete or archive `old-crawler-mcp/SKILL.md` if no routes use it;
+- recompute post-change guide references and delete
+  `old-crawler-mcp/SKILL.md` only when it becomes an unchanged managed orphan;
+- archive an eligible modified or ownership-unknown orphan outside discovery,
+  or stop if a retained guide can still select `old-crawler-mcp`;
 - remove MCP server config and any API/env var documentation;
+- retain an inventory tombstone and protected credentials/data;
 - update replacement guidance to `firecrawl-mcp`, `scrapling-official`, or
   `crawl4ai-official` as appropriate;
 - search for `old-crawler-mcp`, its command name, server name, env vars, and

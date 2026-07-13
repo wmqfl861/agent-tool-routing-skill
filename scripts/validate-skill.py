@@ -741,6 +741,7 @@ def validate_repository_contract(validation: Validation) -> None:
         ROOT / "docs" / "context-benchmark.md",
         ROOT / "tests" / "install.Tests.ps1",
         ROOT / "tests" / "test_benchmark_routing.py",
+        ROOT / "tests" / "test_managed_offboarding.py",
         ROOT / "examples" / "AGENTS.md.snippet",
         ROOT / "examples" / "CLAUDE.md.snippet",
         ROOT / "references" / "authoring.md",
@@ -753,6 +754,31 @@ def validate_repository_contract(validation: Validation) -> None:
     for path in required:
         if not path.is_file():
             validation.error(path, "required repository file is missing")
+
+    offboarding_test_path = ROOT / "tests" / "test_managed_offboarding.py"
+    offboarding_test_text = read_utf8(offboarding_test_path, validation)
+    if offboarding_test_text is not None:
+        test_methods = set(
+            re.findall(r"^\s+def (test_[a-z0-9_]+)\(", offboarding_test_text, re.MULTILINE)
+        )
+        required_methods = {
+            "test_short_removal_request_triggers_complete_offboarding",
+            "test_user_does_not_have_to_enumerate_dependent_cleanup",
+            "test_automatic_skill_deletion_requires_proven_ownership",
+            "test_inventory_routes_and_global_rules_publish_together",
+            "test_remover_side_effects_require_a_narrow_gate",
+            "test_post_change_refcount_handles_the_last_shared_reference",
+            "test_non_deletable_orphans_cannot_remain_discoverable",
+            "test_plugin_scope_is_capability_aware",
+            "test_rollback_never_reactivates_a_missing_capability",
+            "test_protected_and_unrelated_state_is_not_implied_cleanup",
+            "test_bilingual_readmes_document_the_short_request",
+        }
+        for missing in sorted(required_methods - test_methods):
+            validation.error(
+                offboarding_test_path,
+                f"required managed-offboarding regression is missing: {missing}",
+            )
 
     topology_path = ROOT / "benchmarks" / "reference-topology.json"
     topology_text = read_utf8(topology_path, validation)
@@ -1008,6 +1034,7 @@ def validate_repository_contract(validation: Validation) -> None:
 
     skill_text = read_utf8(ROOT / "SKILL.md", validation)
     if skill_text is not None:
+        normalized_skill_text = " ".join(skill_text.split())
         if "name: tool-routing-architecture" not in skill_text:
             validation.error(ROOT / "SKILL.md", "unexpected source skill name")
         physical_lines = len(skill_text.splitlines())
@@ -1027,11 +1054,16 @@ def validate_repository_contract(validation: Validation) -> None:
             ("Keep every C capability in the managed inventory", "managed C inventory"),
             ("bypass active intent routing", "C active-route bypass"),
             ("managed-inventory.md", "canonical managed inventory contract"),
+            ("complete managed offboarding", "concise removal authorization"),
+            (
+                "Do not ask the user to restate or separately authorize",
+                "implied removal cleanup",
+            ),
         ):
-            if requirement not in skill_text:
+            if requirement not in normalized_skill_text:
                 validation.error(
                     ROOT / "SKILL.md",
-                    f"missing v0.2.1 semantic contract: {description}",
+                    f"missing semantic contract: {description}",
                 )
 
     install_text = read_utf8(ROOT / "scripts" / "install.ps1", validation)
@@ -1173,9 +1205,22 @@ def validate_repository_contract(validation: Validation) -> None:
         if text is None:
             continue
         snippet_texts.append(text.replace("\r\n", "\n").replace("\r", "\n"))
+        normalized_snippet_text = " ".join(text.split())
         for heading in ("## Tool Directory Routing", "## Tool Onboarding Gate"):
             if text.count(heading) != 1:
                 validation.error(path, f"must contain exactly one '{heading}' heading")
+        for requirement, description in (
+            ("complete managed offboarding", "concise removal authorization"),
+            ("inspect remover side effects", "remover side-effect gate"),
+            ("never guess an uninstall command from a name", "verified remover provenance"),
+            ("post-change guide reference counts", "shared-guide reference accounting"),
+            ("outside discovery", "non-discoverable orphan archive"),
+            ("recoverable managed-state", "honest managed-state recovery scope"),
+            ("Never restore a route to a missing capability", "missing-tool route guard"),
+            ("negative route test", "removal route validation"),
+        ):
+            if requirement not in normalized_snippet_text:
+                validation.error(path, f"missing onboarding contract: {description}")
     if len(snippet_texts) == 2 and snippet_texts[0] != snippet_texts[1]:
         validation.error(
             snippet_paths[1],
@@ -1203,6 +1248,7 @@ def validate_repository_contract(validation: Validation) -> None:
 
     route_tests_text = read_utf8(ROOT / "references" / "route-tests.md", validation)
     if route_tests_text is not None:
+        normalized_route_tests_text = " ".join(route_tests_text.split())
         if "commit/tag are pinned" in route_tests_text:
             validation.error(
                 ROOT / "references" / "route-tests.md",
@@ -1216,6 +1262,65 @@ def validate_repository_contract(validation: Validation) -> None:
                 ROOT / "references" / "route-tests.md",
                 "remote-skill tests must require an exact SHA or verified artifact digest",
             )
+        for requirement, description in (
+            ('"Delete Example Crawler."', "concise removal prompt"),
+            ("complete managed offboarding", "full removal workflow"),
+            ("zero-reference managed guides", "post-change owned Skill removal"),
+            ("user-modified guide", "modified Skill preservation"),
+            ("keep-data/config/profile flags", "remover side-effect test"),
+            ("never guesses `pip`, `npm`, `brew`", "verified remover provenance test"),
+            ("outside every discovery root", "non-discoverable orphan test"),
+            ("Test both plugin directions", "plugin scope tests"),
+            ("`needs-repair`", "post-removal recovery test"),
+        ):
+            if requirement not in normalized_route_tests_text:
+                validation.error(
+                    ROOT / "references" / "route-tests.md",
+                    f"missing removal test contract: {description}",
+                )
+
+    lifecycle_path = ROOT / "references" / "lifecycle.md"
+    lifecycle_text = read_utf8(lifecycle_path, validation)
+    if lifecycle_text is not None:
+        normalized_lifecycle_text = " ".join(lifecycle_text.split())
+        for requirement, description in (
+            ("complete managed offboarding", "concise removal authorization"),
+            ("management provenance", "Skill management gate"),
+            ("current digest matches the last managed digest", "modified Skill guard"),
+            ("keep-data, keep-config, or keep-profile", "remover side-effect guard"),
+            ("recorded installed provenance and verified official documentation", "verified remover provenance"),
+            ("post-change active reference count", "shared Skill reference accounting"),
+            ("outside every discovery root", "non-discoverable orphan archive"),
+            ("no per-capability disable or removal mechanism", "plugin scope guard"),
+            ("`needs-repair`", "post-removal recovery state"),
+            ("inventory tombstone", "removal history"),
+            ("unrelated capabilities", "scope boundary"),
+        ):
+            if requirement not in normalized_lifecycle_text:
+                validation.error(
+                    lifecycle_path,
+                    f"missing lifecycle removal contract: {description}",
+                )
+
+    inventory_path = ROOT / "references" / "managed-inventory.md"
+    inventory_text = read_utf8(inventory_path, validation)
+    if inventory_text is not None:
+        normalized_inventory_text = " ".join(inventory_text.split())
+        for requirement, description in (
+            ('"management": "managed"', "Skill management field"),
+            ('"active_refcount": 1', "Skill active-reference field"),
+            ('"ownership": "managed-exclusive"', "Skill ownership field"),
+            ("managed-shared", "shared Skill ownership"),
+            ("live digest matches `skill.digest`", "safe Skill deletion digest"),
+            ("pre-change compatibility label was `managed-shared`", "last shared reference cleanup"),
+            ("outside every Agent discovery root", "non-discoverable orphan archive"),
+            ("artifact as removed, archived, shared, modified, external, or retained", "artifact disposition"),
+        ):
+            if requirement not in normalized_inventory_text:
+                validation.error(
+                    inventory_path,
+                    f"missing inventory removal contract: {description}",
+                )
 
 
 def main() -> int:

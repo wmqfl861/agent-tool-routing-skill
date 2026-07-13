@@ -37,6 +37,13 @@ disabling, or replacing any tool, MCP server, skill, plugin, CLI, external API
 integration, API-key-backed service, PATH entry, or routing rule, read
 `tool-onboarding` when available; otherwise read `tool-routing-architecture`.
 A normal request to use a tool does not authorize any of these setup changes.
+A current-user request to remove, delete, or uninstall a named or otherwise
+unambiguously identified capability authorizes its complete managed offboarding
+in this Agent scope. Do not ask the user to separately request Skill, inventory,
+route, managed-global-rule, alias, documentation, or negative-test cleanup. Ask
+only to disambiguate identity or scope, or before deleting shared or
+user-modified artifacts, credentials, caches, browser profiles, user data,
+accounts, or other capabilities.
 
 Setup is complete only after the capability is classified and managed inventory
 and active routing are updated or explicitly left unchanged. Complexity is a
@@ -69,7 +76,17 @@ commit SHA or a verified release-artifact digest, and review diffs, commands,
 paths, secret access, network/external writes, cost, and privileges before
 activation.
 
-For removal or replacement, clean active routes, unused tool guides, aliases,
-config and environment references, and dangling documentation, then run a
-negative route test. Do not enable plugins or modify model, provider, account,
-or API endpoint settings unless the user explicitly requested that change.
+For a current-user request to remove, delete, or uninstall a named capability,
+perform complete managed offboarding without asking the user to enumerate
+dependent cleanup. Back up affected state, inspect remover side effects, use
+keep-data/config/profile options, and treat plugin capabilities separately.
+Resolve installed provenance and never guess an uninstall command from a name.
+Recompute post-change guide reference counts; delete unchanged managed orphans
+and archive dedicated modified or unknown orphans intact outside discovery. A
+retained guide must not select the removed capability. Journal tool removal
+separately, publish inventory/routes/managed rules as a recoverable managed-state
+change, remove dangling references, and run a negative route test. Ask only for
+ambiguous scope, unavoidable protected deletion, necessary plugin-scope
+expansion, or a guide that cannot be safely isolated. Never restore a route to a
+missing capability. Do not enable plugins or modify model, provider, account, or
+API endpoint settings unless the user explicitly requested that change.

@@ -98,6 +98,13 @@ repository, exact commit SHA or verified release digest, reviewed source paths,
 and whether the active guide was imported, adapted, or locally authored. Keep
 this control data outside YAML frontmatter and never include credentials.
 
+Also record guide management provenance as managed, external, or unknown; its
+active capability reference count; the compatible managed-exclusive,
+managed-shared, external, or unknown summary; and the last reviewed tree digest.
+Never use the compatibility summary alone as the deletion gate. These records
+are required before later offboarding may delete or archive the guide without a
+broader user decision.
+
 ## Path And Content Checks
 
 - Use exact relative paths and verify targets exist before adding routes.

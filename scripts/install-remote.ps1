@@ -35,10 +35,10 @@ $ErrorActionPreference = 'Stop'
 if ($InitializeRouting -and $SkipOnboardingRules) {
     throw '-InitializeRouting requires onboarding rules; remove -SkipOnboardingRules.'
 }
-$ReleaseVersion = '0.2.1'
+$ReleaseVersion = '0.2.2'
 $Repository = 'wmqfl861/agent-tool-routing-skill'
 $ManifestRelativePath = 'scripts/install-manifest.json'
-$ManifestSha256 = 'a5243dfee082067fb909fee3dbc53ace7c345ef377411cbffc1c9022fda5e290'
+$ManifestSha256 = '2e19059307f504feafc8dd9940a07cd3344ba679cf9fc86f2e7cbbbecf530c4b'
 $RequiredPayloadPaths = @(
     'VERSION',
     'SKILL.md',

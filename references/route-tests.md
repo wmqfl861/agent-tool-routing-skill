@@ -82,6 +82,46 @@ server ID, skill path, environment variables, and config keys. Confirm no active
 route selects it, its unused guide is gone or archived, and the replacement is
 reachable. Document intentionally retained historical mentions separately.
 
+Use a concise current-user prompt such as "Delete Example Crawler." Confirm it
+authorizes the complete managed offboarding workflow without requiring the user
+to enumerate Skill, inventory, route, managed-global-rule, alias, documentation,
+or negative-test cleanup. Verify the Agent inspects remover side effects before
+execution, uses keep-data/config/profile flags when supported, and asks one
+narrow destructive-authorization question instead of running an unverified or
+necessarily data-deleting remover. Confirm all active routes disappear,
+inventory retains a tombstone, zero-reference managed guides with matching
+digests are removed even when they were previously shared, empty categories are
+pruned, managed global sections are reconciled, and the negative route test
+passes.
+
+Give a capability a display name that resembles a PyPI, npm, Homebrew, or plugin
+package but record a different installed source. Confirm the Agent uses only the
+recorded installed provenance and verified official remover, and never guesses
+`pip`, `npm`, `brew`, plugin commands, or uninstall syntax from the display name.
+
+Repeat with an ambiguous tool name, a shared guide, a user-modified guide, an
+ownership-unknown orphan, and an external guide. Confirm the Agent asks only the
+minimum identity/scope question; moves a dedicated modified or unknown orphan
+intact into a recoverable archive outside every discovery root; and leaves the
+operation `blocked` or `needs-input` rather than retaining a guide that can
+still select the removed capability. Confirm it does not delete credentials,
+caches, browser profiles, user data, accounts, or other capabilities without
+separate authorization.
+
+Test both plugin directions. When one plugin-provided capability is named,
+confirm the Agent uses a per-capability mechanism and does not uninstall the
+whole plugin. If no such mechanism exists, it must ask whether to expand scope
+or only disable routing and must not report an uninstall. When the plugin itself
+is named, confirm every exclusively provided capability gets route cleanup and
+its own tombstone, while capabilities available through another active provider
+remain.
+
+Inject a managed-state publication failure after the remover succeeds. Confirm
+the Agent restores active routes only after an exact reinstall and health check;
+otherwise it leaves the capability unrouted, records `blocked` or
+`needs-repair`, and reports the rollback limitation instead of claiming the
+whole removal was atomic or fully reversible.
+
 ## Initial Index Tests
 
 Exercise initial indexing with fixtures containing enabled and disabled MCP

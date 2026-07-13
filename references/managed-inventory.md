@@ -47,7 +47,7 @@ Write UTF-8 JSON with a trailing newline and this top-level shape:
   "source": {
     "operation": "initial-index",
     "request_id": "<request-id>",
-    "project_version": "0.2.1"
+    "project_version": "0.2.2"
   },
   "scope": {
     "included": ["enabled user and active-workspace capabilities"],
@@ -95,6 +95,9 @@ route changes. A record contains at least:
   "skill": {
     "status": "official",
     "path": "skills/example-search/SKILL.md",
+    "management": "managed",
+    "active_refcount": 1,
+    "ownership": "managed-exclusive",
     "source_revision": "<immutable-revision>",
     "digest": "sha256:<reviewed-tree-digest>"
   },
@@ -113,6 +116,22 @@ Use a documented `kind` such as `mcp-server`, `mcp-tool`,
 `plugin-capability`, `skill`, `cli-integration`, `api-integration`, or
 `builtin`. Treat a plugin as packaging and record separately routable
 capabilities separately.
+
+For every Layer 2 guide, record management provenance and sharing separately.
+Set `skill.management` to `managed`, `external`, or `unknown`, and set
+`skill.active_refcount` to the number of active capabilities that will depend
+on the guide after the planned transaction. Never infer managed provenance from
+a matching folder name. Treat either field as unknown when an older record
+cannot prove it.
+
+Keep `skill.ownership` as a compatibility summary: use `managed-exclusive`
+when a managed guide has at most one active reference, `managed-shared` when it
+has more than one, `external` for externally managed guides, and `unknown`
+otherwise. It is not the deletion gate by itself. Recompute the post-change
+reference count from all planned active capability records before deciding a
+guide disposition. A guide that was `managed-shared` before removal becomes a
+managed orphan when its last reference is removed. Keep `skill.digest` equal to
+the last reviewed managed tree so offboarding can detect later user changes.
 
 Apply these class invariants:
 
@@ -154,11 +173,34 @@ Every authorized add, update, disable, remove, replacement, or reclassification
 operation reads this canonical inventory before planning and updates it in the
 same recoverable change as routing and managed global instructions.
 
+A current-user request to remove, delete, or uninstall a named or unambiguously
+identified capability authorizes the complete managed offboarding transaction
+for that capability in the effective Agent scope. It does not need separate
+wording for Skill, inventory, route, or managed-global-rule cleanup. It does not
+authorize deleting shared or user-modified artifacts, credentials, caches,
+browser profiles, user data, accounts, or other capabilities.
+
 For removal, retain a tombstone record with the stable id, last non-sensitive
 source identity, former classification, `enabled: false`,
 `route.state: removed`, removal time, and concise reason. Remove active route
-and Layer 2 references as required. A documented local retention policy may
-compact old tombstones after their backup and audit retention period expires.
+and Layer 2 references as required. Record the disposition of every affected
+managed artifact as removed, archived, shared, modified, external, or retained.
+Automatically delete a guide when its post-change `skill.active_refcount` is
+zero, managed provenance is proven, and its live digest matches `skill.digest`,
+even when its pre-change compatibility label was `managed-shared`. Move a
+dedicated managed-but-modified or ownership-unknown orphan intact to the
+operation backup's recoverable archive outside every Agent discovery root when
+containment and exclusive use can be proven. Do not leave an orphan guide
+discoverable merely because it cannot be destroyed automatically.
+
+Retain a shared or external guide only when the negative route test proves it
+cannot select the removed capability. If it still exposes that capability and
+cannot be safely isolated without changing another owner or active capability,
+leave the transaction `blocked` or `needs-input` instead of publishing a false
+completion. Record the reason and ask only for the additional edit, move, or
+scope authorization needed to continue. A documented local retention policy
+may compact old tombstones after their backup and audit retention period
+expires.
 
 If a capability is discovered outside an Agent-mediated lifecycle operation,
 do not mutate the inventory in the background. Record it during the next

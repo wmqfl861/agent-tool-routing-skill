@@ -6,6 +6,57 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.2] - 2026-07-13
+
+### Changed / 变更
+
+- Treat a concise current-user request to remove, delete, or uninstall a named
+  capability as authorization for its complete managed offboarding in the
+  effective Agent scope. The Agent no longer asks the user to separately list
+  Skill, inventory, route, managed-global-rule, alias, documentation, or
+  negative-test cleanup.
+- Make removal a journaled lifecycle workflow: inspect remover side effects,
+  resolve the exact command from installed provenance and verified official
+  documentation, preserve protected state with keep-data/config/profile options,
+  remove active routes, prune empty categories, reconcile managed global rules,
+  write an inventory tombstone, search dangling references, and run a negative
+  route test. Managed-state publication is recoverable; exact tool rollback is
+  only claimed when a tested reinstall or restore path exists.
+- Record Layer 2 management provenance separately from the post-change active
+  reference count and compatibility ownership label. Delete an unchanged
+  zero-reference managed guide even when it was previously shared; archive an
+  eligible modified or unknown orphan outside discovery; and never report
+  completion while a retained guide can still select the removed capability.
+- Treat plugin capabilities as separate inventory records. A single capability
+  request cannot silently uninstall its whole plugin, while plugin-wide removal
+  offboards every exclusively provided capability and preserves capabilities
+  available through another provider.
+- Keep the short removal request scoped to the identified capability. Ask only
+  to disambiguate identity or Agent scope, or before deleting shared or
+  user-modified artifacts, credentials, caches, browser profiles, user data,
+  accounts, or other capabilities.
+- Expand repository validation and semantic regression tests for concise
+  removal authorization, remover side-effect gates, plugin scope, reference
+  counting, non-discoverable archival, honest rollback, protected-state
+  retention, and bilingual documentation.
+- 将用户简短的“删除、移除或卸载某个工具”直接视为对目标 Agent 范围内完整受管
+  下线的授权。Agent 不再要求用户逐项补充 Skill、inventory、路由、受管全局规则、
+  别名、文档或负向测试清理。
+- 将删除实现为分阶段 journal 的生命周期流程：先审查卸载器副作用，使用保留数据/
+  配置/profile 的选项保护用户状态，并只从实际安装来源和已验证的官方文档确定卸载
+  命令，不根据显示名称猜测包管理器；再清理活动路由、裁剪空分类、协调受管全局规则、
+  写入 inventory tombstone、排查悬空引用并运行负向路由测试。受管状态发布可恢复；
+  只有存在经过验证的重装或恢复路径时，才承诺工具本体可精确回滚。
+- 将 Layer 2 的管理来源、删除后的活动引用数和兼容所有权标签分别记录。未修改且引用
+  归零的受管指南即使此前共享也会删除；符合条件的人工修改或所有权未知孤儿指南会
+  移到发现目录外归档；任何仍可选择旧能力的指南都会阻止完成状态。
+- 把插件能力作为独立 inventory 记录。删除单项能力不会静默卸载整个插件；删除插件
+  本身时，会下线其独占提供的每项能力，并保留仍有其他 provider 的能力。
+- 简短删除请求只作用于身份明确的能力。只有身份或 Agent 范围有歧义，或将删除共享/
+  人工修改产物、凭据、缓存、浏览器 profile、用户数据、账户或其他能力时才询问。
+- 扩充仓库契约校验和语义回归测试，覆盖简短删除授权、卸载副作用门禁、插件范围、
+  引用计数、发现目录外归档、真实回滚边界、受保护状态保留和中英文文档。
+
 ## [0.2.1] - 2026-07-13
 
 ### Changed / 变更
@@ -307,6 +358,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.2.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.2
 [0.2.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.1
 [0.2.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.0
 [0.1.5]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.5

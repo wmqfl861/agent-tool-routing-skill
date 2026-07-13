@@ -144,6 +144,14 @@ scope, non-sensitive identity evidence, existing skill candidates, and
 discovery confidence. Keep disabled or out-of-scope findings separate from the
 active inventory.
 
+For every matched, imported, or authored Layer 2 guide, record management
+provenance as managed, external, or unknown; its active capability reference
+count; the compatible managed-exclusive, managed-shared, external, or unknown
+summary; and the last reviewed tree digest. Do not mark a pre-existing guide as
+managed by this architecture merely because its name or path matches. These
+fields govern whether a later concise remove/delete/uninstall request may safely
+delete or archive the guide as part of complete managed offboarding.
+
 Check local and tool-bundled skills before any remote search. A name match alone
 is insufficient. Confirm that the candidate describes the same canonical tool,
 current interface, important modes, authentication model, risks, and runtime.
