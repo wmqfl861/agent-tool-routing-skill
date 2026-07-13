@@ -16,8 +16,10 @@ Record the selected mode in the installed global routing rule.
 
 ## Initial Discovery Scope
 
-For an initial index, inspect the effective enabled capabilities registered with
-or discoverable by the selected runtime at user scope and in the active
+The installer only queues or preserves an authorized initial-index request. It
+does not inspect capabilities or emit indexing phases. When the current Agent
+consumes that request, inspect the effective enabled capabilities registered
+with or discoverable by the selected runtime at user scope and in the active
 workspace. Prefer runtime-native structured listings, then structured active
 configuration and actual discovery roots. Include enabled plugin-provided tools
 and skills, but do not treat disabled plugins or inactive caches as available.
@@ -34,6 +36,10 @@ configuration root. Store inventory, progress, remote staging, backups, and
 completion evidence below that same configuration root and outside every
 auto-discovered skill, plugin, command, and hook directory. Use runtime-relative
 roots rather than hard-coded Windows, Linux, or macOS paths.
+
+An Agent-mediated install continues this request before ordinary work. A direct
+terminal install leaves it for the target Agent's next fresh session. Do not
+promise same-session hot-reload.
 
 ## Codex, Claude Code, And zcode Default
 

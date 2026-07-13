@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_PESTER_TESTS: 50
+  EXPECTED_PESTER_TESTS: 58
 
 jobs:
   repository-validation:
@@ -30,6 +30,14 @@ jobs:
         run: python -m pip install PyYAML==6.0.2
       - name: Validate skill metadata, YAML, and links
         run: python scripts/validate-skill.py
+      - name: Test benchmark tooling and documentation values
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Verify canonical reference context benchmark
+        run: >-
+          python scripts/benchmark-routing.py context
+          --topology benchmarks/reference-topology.json
+          --root .
+          --verify benchmarks/reference-context-result.json
       - name: Check whitespace errors
         shell: pwsh
         run: |

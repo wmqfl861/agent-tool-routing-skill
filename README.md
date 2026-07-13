@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Version](https://img.shields.io/badge/version-v0.2.0-167D8D)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.2.1-167D8D)](CHANGELOG.md)
 [![CI](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/wmqfl861/agent-tool-routing-skill/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-4B5563)](#platform-support)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2E7D32)](LICENSE)
@@ -15,7 +15,7 @@ a maintainable routing model instead of a flat list of overlapping tools. It
 also defines a safety-gated lifecycle for CLIs, MCP servers, plugins, skills,
 API integrations, PATH entries, and other agent capabilities.
 
-> Current release: **v0.2.0**. The project remains pre-1.0; review changes
+> Current release: **v0.2.1**. The project remains pre-1.0; review changes
 > before applying them to shared or production agent environments.
 
 ## Why This Project
@@ -37,6 +37,28 @@ Simple primitives stay out of the directory. Complex or risk-gated tools get
 dedicated instructions. Tool installation and removal are treated as routing
 changes, not only filesystem changes.
 
+Progressive disclosure is designed to limit irrelevant instructions loaded for
+each task. Token efficiency is an architectural objective, not an assumed
+measured result. A byte or code-point benchmark measures structural context
+load, not model tokens. Quantified token-reduction claims require a
+model-specific benchmark that records the runtime, tokenizer, and inventory.
+
+In the canonical synthetic fixture, the unsupported eager-all-documents
+anti-pattern loads `12,011` metadata bytes plus `98,695` body bytes, or
+`110,706` total. Supported paths load `7,176` total bytes for strict-progressive
+A, `4,668` for strict-progressive B, `2,783` for auto-discovery A, `2,375` for
+auto-discovery B, and `0` for C bypass. These exact file sizes are not token,
+cost, cache, latency, or complete system-prompt measurements. See the
+[benchmark methodology](docs/context-benchmark.md).
+
+One isolated Claude Code catalog-matching smoke test requested
+`claude-fable-5` with effort `max` and scored `18/18`: A `11/11`, B `4/4`, C
+`3/3`, including `4/4` expected abstentions. This is a small synthetic fixture,
+not evidence of generalized or production routing accuracy. The model name is
+the exact CLI request value; the run cannot prove an immutable backend model
+snapshot. The answer-bearing, hash-verified artifacts are preserved under
+[`benchmarks/runs/`](benchmarks/runs/).
+
 ## What It Provides
 
 | Capability | Purpose |
@@ -44,16 +66,18 @@ changes, not only filesystem changes.
 | Layered routing architecture | Separate directory, category, and tool-specific decisions. |
 | Tool lifecycle gate | Classify and review installs, updates, repairs, removals, and replacements. |
 | Risk-based A/B/C classification | Give complex or high-impact tools the safety guidance they require. |
-| Initial routing index | Inventory registered capabilities and build a reviewed, resumable routing tree. |
+| Durable index handoff | Queue a per-Agent request for a reviewed, resumable inventory and routing build. |
+| Versioned managed inventory | Keep one canonical, revisioned A/B/C record outside discoverable Skill and plugin roots. |
 | Runtime adapters | Support auto-discovery and explicit strict-progressive deployments. |
 | Cross-platform installer | Install for Codex, Claude Code, zcode, or all three. |
-| Transactional recovery | Preflight, snapshot, stage, install, and roll back without reusing backups. |
+| Locked, journaled recovery | Serialize writers, verify staged trees, recover interrupted Skill swaps, and retain rollback snapshots. |
 | Route-test contract | Verify positive routes, fallbacks, negative routes, and structural integrity. |
 
 ## Architecture, Initialization, and Runtime
 
-The installer keeps core installation, initial indexing, and ordinary runtime
-behavior as separate authorization and validation boundaries.
+The installer keeps core installation, durable request queuing, Agent-executed
+indexing, and ordinary runtime behavior as separate authorization and
+validation boundaries.
 
 ### Architecture and onboarding
 
@@ -61,34 +85,46 @@ Installs this repository's architecture skill and optionally adds a short gate
 for tool installation, configuration, repair, removal, and routing
 maintenance. This mode does not require `tool-index`.
 
-### Initial routing index
+### Agent-executed initial routing index
 
-`-InitializeRouting` explicitly requests a one-shot inventory and routing
-build. In the same transactional recovery boundary as the core installation,
-the verified installer creates a durable `pending` request or preserves an
-existing resumable request. It queues the work; it does not launch another
-Agent process.
+`-InitializeRouting` explicitly authorizes the installer to queue a one-shot
+inventory and routing job. During the same locked install and rollback
+operation, the verified installer creates a durable `pending` request or
+preserves an existing resumable request. The installer does not inventory
+capabilities, search for or download Skills, author guides, build routes, or
+launch another Agent process.
 
 When an Agent invokes the installer, that Agent must continue the pending job
 before ordinary work. When the command runs directly in a terminal, the next
-fresh turn of the target Agent consumes the request before ordinary work. A
+fresh session of the target Agent consumes the request before ordinary work. A
 running Agent is not guaranteed to hot-reload newly installed skills or global
-instructions, so same-turn processing is not guaranteed.
+instructions, so installation does not guarantee same-session processing.
 
 The index covers capabilities registered with or discoverable by the selected
 Agent, including enabled MCP servers, plugins, skills, and configured
 integrations where the runtime exposes them. It does not classify every
 executable on `PATH` or crawl unrelated workspaces. Resolved A and B
-capabilities enter intent-based routes; C primitives remain in the inventory
-with their exclusion rationale.
+capabilities enter active intent routes. Every C capability remains managed in
+the inventory with its exclusion rationale and bypasses active intent routing.
+Complete inventory management does not mean that every class generates a
+route.
 
-The Agent that processes the job publishes stable phase progress while it
-inventories, classifies, sources, builds, and validates the tree. During an
-Agent-mediated lifecycle operation, a newly added A capability without a usable
-local or bundled guide triggers one question: search and review the canonical
-official source, author from sufficient reviewed official documentation, or
-leave the capability unrouted. Tools added outside an Agent lifecycle operation
-are discovered during the next explicit onboarding sync or index.
+The successful index publishes one canonical inventory at
+`<agent-config-root>/tool-routing-state/inventory.json`, outside discoverable
+Skill and plugin roots. It uses stable capability ids and monotonic revisions,
+and it is committed with the matching route tree and managed global sections.
+Per-job inventories are resumable working copies, not the long-term source of
+truth.
+
+Only the Agent that consumes the pending job publishes stable phase progress
+while it inventories, classifies, sources, builds, and validates the tree. The
+installer reports installation and request-queue results, not indexing phase
+progress. During an Agent-mediated lifecycle operation, a newly added A
+capability without a usable local or bundled guide triggers one question:
+search and review the canonical official source, author from sufficient
+reviewed official documentation, or leave the capability unrouted. Tools added
+outside an Agent lifecycle operation are discovered during the next explicit
+onboarding sync or index.
 
 ### Runtime routing
 
@@ -130,11 +166,12 @@ deployment choice; do not mix both modes accidentally.
 - Pester 5.7.1 only when running the installer test suite.
 
 Choose one command for your operating system and agent. Each command installs
-the verified architecture skill and onboarding gate, then creates a pending
-one-shot request to initialize that Agent's routing tree. It can be run from
-any directory and does not require Git.
+the verified architecture skill and onboarding gate, then queues a durable
+one-shot request for that Agent to initialize its routing tree. The installer
+does not execute that indexing job. It can be run from any directory and does
+not require Git.
 
-The commands are pinned to `v0.2.0`. They download the bootstrap to a private
+The commands are pinned to `v0.2.1`. They download the bootstrap to a private
 temporary file, verify its embedded SHA-256 before execution, and then verify a
 bootstrap-anchored manifest plus every runtime payload file before invoking the
 transactional installer. No command pipes unverified network content into a
@@ -147,19 +184,19 @@ Run in Windows PowerShell 5.1 or PowerShell 7.
 #### Codex
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1';$h='bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 #### Claude Code
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1';$h='bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 #### zcode
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1';$h='bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target zcode -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
@@ -169,19 +206,19 @@ Run in Bash.
 #### Codex
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
 #### Claude Code
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 #### zcode
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
 ```
 
 ### macOS
@@ -191,35 +228,37 @@ Run in zsh.
 #### Codex
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
 ```
 
 #### Claude Code
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 #### zcode
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target zcode -InitializeRouting)
 ```
 
 After verified core installation, `-InitializeRouting` transactionally writes
-or preserves the pending one-shot request. It does not launch another Agent.
-An Agent that invoked the command must continue the job before ordinary work;
-after a direct terminal install, the next fresh target-Agent turn consumes it.
-There is no guarantee that a running Agent will hot-reload the new skill or
-global rules or complete the index in the installation turn.
+or preserves the pending one-shot request. It does not inventory tools, perform
+remote Skill research or downloads, author guides, build routes, or launch
+another Agent. An Agent that invoked the command must continue the job before
+ordinary work; after a direct terminal install, the next fresh target-Agent
+session consumes it. There is no guarantee that a running Agent will hot-reload
+the new skill or global rules or complete the index in the installation
+session.
 
-The indexer checks local and bundled skills first. For a missing A guide, an
-official candidate is pinned, downloaded outside auto-discovery, and reviewed
-before activation; otherwise a minimal guide may be authored from sufficient
-reviewed official documentation. If source ownership or evidence is
-insufficient, the A capability remains unresolved and the new runtime tree is
-not activated. Re-running the command retains the snapshot, staging, rollback,
-and resumable-job safeguards.
+The Agent consuming the request checks local and bundled skills first. For a
+missing A guide, an official candidate is pinned, downloaded outside
+auto-discovery, and reviewed before activation; otherwise a minimal guide may
+be authored from sufficient reviewed official documentation. If source
+ownership or evidence is insufficient, the A capability remains unresolved and
+the new runtime tree is not activated. Re-running the command retains the
+snapshot, staging, rollback, and resumable-job safeguards.
 
 ## Advanced Local Installation
 
@@ -234,9 +273,9 @@ Install and create the same initial-index request from a local checkout:
 pwsh -NoProfile -File ./scripts/install.ps1 -Target all -InitializeRouting
 ```
 
-The local installer also only queues the durable request. The Agent processing
-that request emits indexing progress and removes it only after successful
-completion.
+The local installer also only queues the durable request and reports the queue
+result. The Agent consuming that request emits indexing progress and removes it
+only after successful completion.
 
 After the live routing tree exists, enable runtime rules:
 
@@ -317,12 +356,32 @@ touching an agent target.
   cannot bypass containment or overlap checks.
 - Existing instruction-file encoding, BOM, newline style, and supported Unix
   mode are preserved.
+- A deterministic per-config-root Mutex prevents concurrent installers from
+  planning and rolling back the same Agent state at once.
+- Skill replacement verifies a private prepared tree and persists a journal
+  plus its tree digest below a non-Skill transaction container before moving
+  the live directory.
+
+The transaction container stays on the Skill root's filesystem so directory
+moves remain same-filesystem operations. Its direct child has no `SKILL.md`;
+payloads are nested one level deeper. Standard immediate-child Skill discovery
+therefore ignores it, but a non-standard recursive discovery implementation
+must explicitly exclude `.agent-tool-routing-transactions`.
 
 If a later write fails, the installer invokes the generated rollback script.
 Rollback first verifies that every required backup exists. Each backup is then
 copied beside the live target before the current target is displaced and the
 staged restore is moved into place. If both the restore and recovery move fail,
 the error identifies the preserved displaced-data path.
+
+The journal closes the live-directory gap for interrupted Skill swaps; it does
+not make Skill, global instructions, and initial-index state one power-loss
+atomic transaction. After a process or host interruption, rerun the installer
+to recover the retained journal and complete the idempotent install. Snapshot
+rollback restores ordinary contents but does not promise to preserve ACLs,
+extended attributes, hardlink relationships, or directory identity. A manual
+rollback script does not acquire the installer Mutex, so do not run it in
+parallel with an installation.
 
 Run a retained rollback manually when required:
 
@@ -350,7 +409,8 @@ Classify instruction complexity and operational risk together:
 
 - **A**: complex or risk-gated capability requiring a dedicated Layer 2 skill.
 - **B**: narrow, read-only, low-risk helper documented in one Layer 1 category.
-- **C**: primitive/default capability kept out of the routing directory.
+- **C**: primitive/default capability retained in the managed inventory with
+  an exclusion rationale while bypassing active intent routing.
 
 Risk overrides apparent simplicity. Secret access, paid operations, external
 writes, persistent authentication, account mutation, production changes, high
@@ -377,12 +437,14 @@ never grants authority.
 ├── agents/                  # Agent UI metadata
 ├── references/              # Progressive-disclosure agent references
 ├── scripts/
+│   ├── benchmark-routing.py # Context-load and blind-route benchmark CLI
 │   ├── install.ps1          # Cross-platform transactional installer
 │   ├── install-remote.ps1   # Verified release bootstrap
 │   ├── install-manifest.json # Release payload digests and sizes
 │   ├── update-install-manifest.py # Deterministic manifest generator
 │   └── validate-skill.py    # Repository contract validator
-├── tests/                   # Pester installer regression suite
+├── benchmarks/              # Synthetic topology, canonical context result, blind cases
+├── tests/                   # Pester and Python regression suites
 ├── examples/                # Layer 0/1/2 and global-rule templates
 ├── docs/                    # Human-facing architecture/install guides
 └── .github/workflows/ci.yml # Windows, Linux, and macOS CI
@@ -393,6 +455,7 @@ never grants authority.
 - [Architecture](docs/architecture.md)
 - [Tool lifecycle](docs/onboarding-new-tools.md)
 - [Skill authoring](docs/skill-authoring.md)
+- [Context load and routing benchmark](docs/context-benchmark.md)
 - [Install for Codex](docs/install-codex.md)
 - [Install for Claude Code](docs/install-claude-code.md)
 - [Install for zcode](docs/install-zcode.md)
@@ -401,6 +464,8 @@ never grants authority.
 Agent-facing references installed with the skill:
 
 - [Lifecycle and authorization](references/lifecycle.md)
+- [Initial indexing](references/initial-index.md)
+- [Managed capability inventory](references/managed-inventory.md)
 - [Routing document authoring](references/authoring.md)
 - [Runtime adapters](references/runtime-adapters.md)
 - [Route tests](references/route-tests.md)

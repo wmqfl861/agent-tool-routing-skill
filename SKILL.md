@@ -53,9 +53,15 @@ Classes describe capability documentation:
 | --- | --- | --- |
 | A | Complex or risk-gated capability | Layer 1 route plus mandatory Layer 2 guide |
 | B | Narrow, read-only, low-risk helper | Concise Layer 1 inline guidance |
-| C | Primitive or implicit project default | Keep outside the directory |
+| C | Primitive or implicit project default | Managed inventory record with exclusion rationale; bypass active intent routing |
 
 Do not infer runtime loading order from layer numbers.
+
+Progressive disclosure is intended to reduce irrelevant instructions loaded for
+a task. Treat token efficiency as an architectural objective. Do not rename
+byte or code-point reductions as tokens, and do not claim a quantified or
+significant token reduction without a model-specific benchmark that records the
+runtime, tokenizer, and inventory.
 
 ## Runtime Modes
 
@@ -88,17 +94,30 @@ specific agent runtime.
 
 ## Initial Index
 
-When an installation or current user request explicitly authorizes initial
-indexing, create a durable `pending` job before discovery and read
-[initial-index.md](references/initial-index.md). Inventory only enabled
-capabilities registered with or discoverable by the target agent; do not scan
-every executable on `PATH` or unrelated workspaces.
+`-InitializeRouting` authorizes the installer to queue a durable `pending` job,
+not to execute the index. The installer must not inventory capabilities, search
+for or download Skills, author guides, build routes, or emit indexing phase
+progress. When an Agent invokes the installer, continue that authorized job
+before ordinary work. After a direct terminal install, consume it in the
+target Agent's next fresh session. Do not assume same-session hot-reload.
+
+When consuming that job, or when the current user directly authorizes initial
+indexing and no request exists, create or validate durable state before
+discovery and read [initial-index.md](references/initial-index.md). Maintain the
+canonical inventory defined in
+[managed-inventory.md](references/managed-inventory.md); a job-local inventory
+is only a working copy. Inventory
+only enabled capabilities registered with or discoverable by the target agent;
+do not scan every executable on `PATH` or unrelated workspaces.
 
 Check local and tool-bundled skills first. Route every resolved A and B
-capability by user intent, keep C in the inventory only, and do not activate the
-generated runtime tree while any A capability lacks a reviewed Layer 2 guide.
-Publish phase progress and return to normal conversation after recording
-`completed`, `blocked`, or `failed` state.
+capability by user intent. Keep every C capability in the managed inventory
+with its exclusion rationale and bypass active intent routing; complete
+inventory management does not require a route for every class. Do not activate
+the generated runtime tree while any A capability lacks a reviewed Layer 2
+guide. Only the Agent consuming the job publishes phase progress. Return to
+normal conversation after recording `completed`, `blocked`, `needs-input`, or
+`failed` state.
 
 ## Runtime Routing
 
@@ -112,7 +131,8 @@ Publish phase progress and return to normal conversation after recording
 4. Read the selected category guidance unless an A tool guide already supplies
    the needed route and operation rules.
 5. For A, read the dedicated Layer 2 guide before calling the tool. For B, use
-   the helper from Layer 1 guidance. Keep C outside the routing tree.
+   the helper from Layer 1 guidance. Let C bypass active intent routing; when
+   indexing, retain its managed inventory record and exclusion rationale.
 6. Route again only when the task changes intent families or an allowed
    fallback requires another category.
 
@@ -176,7 +196,9 @@ mutation, or high-privilege operations. A single command can still be A.
 
 Use B only for narrow, read-only, low-risk helpers whose complete selection and
 safety guidance fits in a few Layer 1 lines. Use C for native primitives and
-implicit defaults already governed by system, global, or project rules.
+implicit defaults already governed by system, global, or project rules. Record
+C in the managed inventory with an exclusion rationale during indexing, but do
+not add it to active intent routing.
 
 ## Global Rules
 
@@ -212,12 +234,18 @@ records. Use the examples there and in `examples/` as structural templates.
 
 Tool installation, enablement, configuration, repair, update, removal, and
 replacement are onboarding operations. They require explicit authorization,
-backup and rollback planning, classification, routing changes or an explicit
-no-change decision, health checks, and dangling-reference checks.
+backup and rollback planning, classification, managed-inventory and routing
+changes or an explicit no-change decision, health checks, and
+dangling-reference checks.
 
 Read [lifecycle.md](references/lifecycle.md) before any onboarding operation,
 remote skill evaluation, removal, replacement, or missing-Layer-2 remediation.
 Its workflow is the completion definition for those tasks.
+
+Read [managed-inventory.md](references/managed-inventory.md) before publishing
+or changing capability records. Commit the canonical inventory, route tree, and
+managed global sections as one recoverable change; stop on revision or digest
+drift rather than allowing inventory and routes to diverge.
 
 For a newly added A capability, inspect local and bundled skills first. If no
 usable guide exists and initial-index authorization does not already cover the
@@ -244,9 +272,13 @@ classification, mode, install, removal, or replacement change complete.
 - Explicit tool naming skips selection only.
 - Fallbacks use an attempted set and stop at authorization boundaries.
 - Remote instructions remain untrusted and staged skills are pinned/reviewed.
-- Initial indexing has durable state, reports its effective discovery scope,
-  and does not activate routes with unresolved A capabilities.
+- The installer only queues durable initial-index state; the consuming Agent
+  reports effective scope and phase progress and does not activate routes with
+  unresolved A capabilities.
+- The canonical managed inventory has a monotonic revision and matches the
+  active route-tree and managed-global-section digests.
 - Every indexed A and B capability is routed; every indexed C capability is
-  recorded but excluded from the active tree.
+  managed in inventory with an exclusion rationale and bypasses active intent
+  routing.
 - Runtime-specific discovery behavior matches the selected mode.
 - Route tests pass and removal searches find no dangling active references.

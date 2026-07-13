@@ -12,9 +12,17 @@ Setup is complete only after:
 
 1. the capability is identified;
 2. the tool is classified as A, B, or C;
-3. routing is updated or explicitly left unchanged;
+3. managed inventory and active routing are updated or explicitly left
+   unchanged;
 4. validation has run;
 5. rollback or recovery instructions are clear when config files were changed.
+
+The managed inventory is the versioned JSON document at
+`<agent-config-root>/tool-routing-state/inventory.json`, outside discoverable
+Skill and plugin roots. Job-local inventories are working copies only. Follow
+the [managed inventory contract](../references/managed-inventory.md) for stable
+ids, class invariants, privacy, concurrency checks, tombstones, and atomic
+publication with routing changes.
 
 Tool lifecycle work does not authorize a broader change. A request to use or
 evaluate a tool is not permission to install it, enable a plugin or MCP server,
@@ -22,20 +30,22 @@ authenticate an account, change a model/provider, purchase quota, publish
 content, or write to an external system. Obtain authorization for those actions
 from the current user or an existing higher-priority policy.
 
-## Initial Index After Installation
+## Queued Initial Index After Installation
 
 The quick-install commands use `-InitializeRouting` as explicit authorization
-for one initial inventory, public-source research, local Skill work, and routing
-update for the selected Agent. The verified core installer creates a durable
-`pending` request before any indexing begins, or preserves an existing
-resumable request as part of the same transactional install. It does not launch
-another Agent process.
+to queue one initial inventory, public-source research, local Skill work, and
+routing update for the selected Agent. The verified core installer creates a
+durable `pending` request before any indexing begins, or preserves an existing
+resumable request as part of the same locked install and rollback operation. It
+does not inventory capabilities, search for or download Skills, author guides, build
+routes, or launch another Agent process.
 
 When an Agent invokes installation, it must continue the pending job before
 ordinary work. A direct terminal install leaves the request for the target
-Agent's next fresh turn. Do not assume a running Agent can hot-reload the new
-architecture or global rules or finish indexing in the installation turn. The
-Agent that processes the request publishes phase progress.
+Agent's next fresh session. Do not assume a running Agent can hot-reload the new
+architecture or global rules or finish indexing in the installation session.
+Only the Agent that consumes the request publishes phase progress; the
+installer reports installation and queue status only.
 
 The index covers enabled capabilities registered with or discoverable by the
 target Agent. Depending on what the runtime exposes, this can include MCP
@@ -53,10 +63,13 @@ For the resulting index:
 
 - route every resolved A capability through an existing reviewed Layer 2;
 - route every B helper through complete Layer 1 guidance;
-- retain every C capability in the inventory with its exclusion rationale, but
-  keep it outside the active routing tree;
+- retain every C capability in the managed inventory with its exclusion
+  rationale, but let it bypass active intent routing;
 - add Layer 0 entries only for meaningful user-intent categories represented
   by active A or B capabilities.
+
+This is complete inventory management; it does not require every class to
+generate an active route.
 
 Do not activate the generated runtime tree while any A capability lacks a
 usable guide. If source ownership or evidence is insufficient, mark the job
@@ -134,7 +147,8 @@ Action:
 
 ### C: Implicit Primitive or Default
 
-Choose C when the capability should stay outside the routing directory.
+Choose C when the capability should remain in managed inventory but bypass
+active intent routing.
 
 Common examples:
 
@@ -146,10 +160,9 @@ Common examples:
 
 Action:
 
-1. Do not add it to Layer 0.
-2. Do not create a Layer 2 skill.
-3. If future confusion is likely, document the decision in the architecture
-   maintenance notes, not in the tool directory.
+1. Retain or update its managed inventory record and exclusion rationale.
+2. Do not add it to Layer 0 or an active Layer 1 route.
+3. Do not create a Layer 2 skill.
 
 ## Update Order
 
@@ -168,8 +181,8 @@ For B tools:
 
 For C capabilities:
 
-1. Leave the directory unchanged.
-2. Mention the reason only if needed to prevent repeated mistaken additions.
+1. Retain or update the managed inventory record and exclusion rationale.
+2. Leave active intent routing unchanged.
 
 ## Stage Remote Skills
 
@@ -197,11 +210,12 @@ If no trustworthy official skill exists, write a minimal local Layer 2 skill
 from verified documentation. Preserve source links and version assumptions;
 do not copy executable instructions blindly.
 
-For an automatically remediated missing A guide, the same staging rule applies:
-first check local and tool-bundled Skills, then resolve the canonical official
-repository, pin an exact revision, stage outside auto-discovery, and review the
-candidate before activation. Never install the first similarly named GitHub
-search result directly into a live Skill root.
+For a missing A guide remediated by the Agent consuming an authorized indexing
+job, the same staging rule applies: first check local and tool-bundled Skills,
+then resolve the canonical official repository, pin an exact revision, stage
+outside auto-discovery, and review the candidate before activation. Never
+install the first similarly named GitHub search result directly into a live
+Skill root.
 
 If the canonical project does not provide a suitable Skill, author only from
 sufficient reviewed official README/documentation, repository examples, local
@@ -258,7 +272,10 @@ Action:
 - `name` matches the skill folder name.
 - Layer 1 paths point to existing Layer 2 skills for every A tool.
 - B helpers explicitly say no tool-specific skill is required.
-- C capabilities are not accidentally added to Layer 0.
+- Every C capability has a managed inventory record and exclusion rationale and
+  is not accidentally added to active intent routing.
+- The canonical inventory revision and recorded route/global-rule digests match
+  the active routing state.
 - Removed tools have no dangling Layer 0, Layer 1, Layer 2, global-rule,
   README, docs, examples, MCP/plugin/CLI/API/PATH, or current decision list
   references.

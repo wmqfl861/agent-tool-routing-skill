@@ -5,6 +5,8 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.json text eol=lf
+*.jsonl text eol=lf
+benchmarks/runs/**/*.txt text eol=lf
 *.ps1 text eol=lf
 *.py text eol=lf
 LICENSE text eol=lf

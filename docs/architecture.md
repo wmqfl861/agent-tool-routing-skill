@@ -26,20 +26,23 @@ Global rules stay short. They identify when routing applies, name the deployed
 runtime mode, preserve primitive bypasses, and state the authorization boundary.
 They do not duplicate the complete architecture or tool documentation.
 
-## Initial Routing Index
+## Agent-Executed Initial Routing Index
 
 Initial indexing is an explicitly authorized, one-shot onboarding operation,
 not background monitoring. `-InitializeRouting` performs a verified core
-installation and transactionally creates a durable `pending` request, or
-preserves an existing resumable request, before discovery begins. It does not
-launch another Agent process.
+installation and queues a durable `pending` request within the same locked
+install and rollback operation, or preserves an existing resumable request,
+before discovery begins. The installer
+does not inventory capabilities, search for or download Skills, author guides,
+build routes, or launch another Agent process.
 
 An Agent that invokes installation must continue the request before ordinary
 work. A direct terminal installation leaves it for the target Agent's next
-fresh turn. A running Agent is not guaranteed to hot-reload new skills or
-global rules, so same-turn processing is not guaranteed. The Agent that
-processes the request emits phase progress and returns to ordinary conversation
-after recording a terminal or resumable state.
+fresh session. A running Agent is not guaranteed to hot-reload new skills or
+global rules, so installation does not guarantee same-session processing. Only
+the Agent that consumes the request emits phase progress and returns to
+ordinary conversation after recording a terminal or resumable state. The
+installer reports installation and queue status, not indexing phase progress.
 
 The effective discovery boundary is the target Agent, not the whole machine.
 Inventory capabilities that are enabled and registered with or discoverable by
@@ -54,7 +57,20 @@ differently:
 - A capabilities require a reviewed Layer 2 guide before their Layer 1 route
   can become active.
 - B helpers receive complete low-risk guidance in Layer 1.
-- C primitives remain inventory-only and outside the active routing tree.
+- Every C capability remains in the managed inventory with its exclusion
+  rationale and bypasses active intent routing.
+
+This is complete inventory management, not a requirement that every class
+generate an active route.
+
+The durable source of truth is
+`<agent-config-root>/tool-routing-state/inventory.json`, outside discoverable
+Skill and plugin roots. A per-job inventory is only a working copy. The live
+inventory uses stable capability ids and monotonic revisions, and records
+classification evidence, Skill coverage, route state, source provenance,
+discovery limitations, and a required exclusion rationale for C. Publish it
+with the matching route tree and managed global sections as one recoverable
+change. See [Managed Capability Inventory](../references/managed-inventory.md).
 
 The resulting runtime tree remains inactive if any A capability is unresolved.
 The durable job records progress, evidence, staging, backup, and a resumable
@@ -81,6 +97,12 @@ and environment management.
 Layer numbers do not inherently guarantee loading order. Every deployment must
 choose a mode that matches the runtime's actual discovery behavior and record
 that mode in its global instructions.
+
+Progressive disclosure is intended to reduce irrelevant instructions loaded
+for a task. Treat token efficiency as a design objective. Byte or code-point
+measurements show structural context load, not model tokens. Quantified or
+significant token-reduction claims require a model-specific benchmark that
+records the runtime, tokenizer, and inventory.
 
 ### Auto-Discovery (Default)
 
@@ -139,7 +161,7 @@ enable it.
 | --- | --- | --- |
 | A | Complex or risk-gated capability | Layer 1 route and mandatory Layer 2 guide |
 | B | Narrow, read-only, low-risk helper | Complete inline Layer 1 guidance |
-| C | Primitive or implicit project default | Keep outside the directory |
+| C | Primitive or implicit project default | Managed inventory record with exclusion rationale; bypass active intent routing |
 
 Complexity is a heuristic rather than a score. Use A when safe use requires
 substantial mode selection, setup/auth checks, overlap comparisons, quota
@@ -155,8 +177,10 @@ command can therefore be A.
 Use B only when the full selection and safety contract is short, read-only, and
 low risk. Use C for patching source text, known shell commands and tests, plan
 updates, simple inspection, and other defaults already governed by higher-level
-instructions. PDF, DOCX, spreadsheet, image, audio, video, and archive work is
-specialized file handling, not automatically primitive.
+instructions. During indexing, retain C in the managed inventory with its
+exclusion rationale while keeping it outside active intent routing. PDF, DOCX,
+spreadsheet, image, audio, video, and archive work is specialized file
+handling, not automatically primitive.
 
 ## Fallbacks
 
@@ -205,9 +229,15 @@ For a new capability:
 3. Classify using both complexity and mandatory risk gates.
 4. For A, create and validate Layer 2 before adding its Layer 1 route.
 5. For B, put complete low-risk guidance in Layer 1.
-6. For C, leave the routing tree unchanged.
+6. For C, retain or update the managed inventory record and exclusion rationale
+   while leaving active intent routing unchanged.
 7. Update Layer 0 only for a genuinely new intent category.
 8. Validate paths, metadata, health, route behavior, and rollback.
+
+Lifecycle operations read and update the same canonical managed inventory used
+by initial indexing. They stop on revision or route-digest drift and cannot
+report completion while inventory, active routes, and managed global rules
+describe different states.
 
 During an Agent-mediated lifecycle operation, when a newly added A capability
 has no usable local or bundled guide and the current request has not already

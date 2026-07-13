@@ -1,0 +1,82 @@
+{
+  "schema_version": 2,
+  "name": "synthetic-8-category-32-tool-topology",
+  "synthetic": true,
+  "description": "A transparent scaling fixture built from repository templates; it is not a supported loading mode or production usage data.",
+  "documents": [
+    {
+      "id": "layer0-index",
+      "layer": 0,
+      "path": "examples/tool-index.SKILL.md",
+      "instances": 1
+    },
+    {
+      "id": "layer1-category-template",
+      "layer": 1,
+      "path": "examples/category-skill.example.md",
+      "instances": 8
+    },
+    {
+      "id": "layer2-tool-template",
+      "layer": 2,
+      "path": "examples/tool-specific-skill.example.md",
+      "instances": 32
+    }
+  ],
+  "routes": [
+    {
+      "id": "auto-discovery-a",
+      "intent_type": "A",
+      "mode": "auto-discovery",
+      "selected_instances": {
+        "layer2-tool-template": 1
+      },
+      "selected_metadata_instances": {
+        "layer2-tool-template": 1
+      }
+    },
+    {
+      "id": "auto-discovery-b",
+      "intent_type": "B",
+      "mode": "auto-discovery",
+      "selected_instances": {
+        "layer1-category-template": 1
+      },
+      "selected_metadata_instances": {
+        "layer1-category-template": 1
+      }
+    },
+    {
+      "id": "c-bypass",
+      "intent_type": "C",
+      "mode": "bypass",
+      "selected_instances": {},
+      "selected_metadata_instances": {}
+    },
+    {
+      "id": "strict-progressive-a",
+      "intent_type": "A",
+      "mode": "strict-progressive",
+      "selected_instances": {
+        "layer0-index": 1,
+        "layer1-category-template": 1,
+        "layer2-tool-template": 1
+      },
+      "selected_metadata_instances": {
+        "layer0-index": 1
+      }
+    },
+    {
+      "id": "strict-progressive-b",
+      "intent_type": "B",
+      "mode": "strict-progressive",
+      "selected_instances": {
+        "layer0-index": 1,
+        "layer1-category-template": 1
+      },
+      "selected_metadata_instances": {
+        "layer0-index": 1
+      }
+    }
+  ]
+}

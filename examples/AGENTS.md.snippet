@@ -38,20 +38,25 @@ integration, API-key-backed service, PATH entry, or routing rule, read
 `tool-onboarding` when available; otherwise read `tool-routing-architecture`.
 A normal request to use a tool does not authorize any of these setup changes.
 
-Setup is complete only after the capability is classified and routing is
-updated or explicitly left unchanged. Complexity is a heuristic, but any
+Setup is complete only after the capability is classified and managed inventory
+and active routing are updated or explicitly left unchanged. Complexity is a
+heuristic, but any
 irreversible or destructive action, external write, paid use, production
 change, secret/private-data access, persistent session, account mutation, or
 high privilege forces A-class treatment with dedicated safety guidance.
 
-Before the first ordinary task of a fresh session, check whether
+`-InitializeRouting` only queues or preserves an initial-index request; the
+installer does not inventory, source or download Skills, author guides, build
+routes, or report indexing phases. An Agent that invoked the installer must
+consume that request before ordinary work. Otherwise, before the first ordinary
+task of a fresh session, check whether
 `tool-routing-state/initial-index.json` exists under the Agent configuration
-root. If it does,
-read the architecture skill's `references/initial-index.md`, resume that
-explicitly authorized job, and report phase progress. Inventory only enabled
-capabilities registered with or discoverable by this agent. Route all resolved
-A and B capabilities, keep C inventory-only, and do not activate the generated
-runtime tree while any A guide is unresolved.
+root. If it does, read the architecture skill's `references/initial-index.md`,
+resume that explicitly authorized job, and report phase progress. Inventory
+only enabled capabilities registered with or discoverable by this agent. Route
+all resolved A and B capabilities. Keep C in managed inventory with its
+exclusion rationale and let it bypass active intent routing. Do not activate
+the generated runtime tree while any A guide is unresolved.
 
 After adding a new A capability, check local and tool-bundled skills first. If
 no usable guide exists and remediation is not already authorized, ask once

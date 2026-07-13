@@ -6,6 +6,72 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.1] - 2026-07-13
+
+### Changed / 变更
+
+- Clarify that `-InitializeRouting` makes the installer queue or preserve a
+  durable request; the installer does not inventory tools, search or download
+  Skills, author guides, build routes, or emit indexing phase progress. An
+  invoking Agent continues the job, while a direct terminal install waits for
+  the target Agent's next fresh session; same-session hot-reload is not
+  guaranteed.
+- Define C consistently as a managed inventory record with an exclusion
+  rationale that bypasses active intent routing. A and B enter active routes;
+  complete inventory management does not mean every class generates a route.
+- Define one durable canonical inventory at
+  `<agent-config-root>/tool-routing-state/inventory.json`, with stable
+  capability ids, monotonic revisions, class invariants, source provenance,
+  C-class exclusion rationales, and publication with matching routes.
+- Limit token-efficiency claims to the progressive-disclosure design goal.
+  Byte or code-point measurements are not token counts; quantified or
+  significant token claims require a model-specific runtime/tokenizer/inventory
+  benchmark.
+- Replace delete-then-copy Skill installation with a single-writer, journaled
+  directory swap. The installer verifies a private incoming tree, persists its
+  digest before displacing live data, restores exact previous data on caught
+  commit failures, and recovers or fails closed after process interruption.
+- Add a standard-library benchmark CLI that separates YAML frontmatter from
+  Skill bodies and distinguishes strict-progressive, auto-discovery, and C
+  bypass paths. The unsupported eager-all-documents anti-pattern is `12,011`
+  metadata + `98,695` body = `110,706` total bytes; supported route totals are
+  strict A `7,176`, strict B `4,668`, auto A `2,783`, auto B `2,375`, and C
+  `0`. These are exact synthetic file sizes, not token measurements.
+- Expand blind routing to opaque case IDs, correct `abstain` scoring, unavailable
+  and missing-guide cases, authorization boundaries, explicit selection, and
+  adversarial quoted tool names. Replace the incomplete prior run with a fully
+  preserved isolated Claude Code smoke test: requested `claude-fable-5`/`max`,
+  `18/18` overall, A `11/11`, B `4/4`, C `3/3`, and expected abstentions `4/4`.
+  The result is a small synthetic catalog-matching test, not a generalization or
+  production-accuracy claim; the model name is the CLI request value, not a
+  proven immutable backend snapshot.
+- 明确 `-InitializeRouting` 只让安装器排队或保留持久请求；安装器不执行工具
+  盘点、Skill 检索或下载、指南编写、路由构建，也不输出索引阶段进度。由调用
+  安装器的 Agent 继续任务；终端直接安装时，由目标 Agent 的下一次全新会话
+  接手，不保证同一会话热加载。
+- 统一将 C 类定义为受管清单记录：保留排除理由并绕过活动意图路由。A、B 类
+  进入活动路由；完整清单管理不代表每种分类都生成路由。
+- 规定唯一持久清单路径
+  `<agent-config-root>/tool-routing-state/inventory.json`，使用稳定 capability id、
+  单调 revision、分类不变量和来源证据；C 类必须有排除理由，并与匹配路由一同发布。
+- Token 效率仅作为渐进式加载的设计目标；字节数或码点数不能改称 token 数，
+  量化收益或“显著降低 token”的表述必须由记录模型、runtime、tokenizer 和
+  工具清单的专门基准支持。
+- Skill 安装从“先删除再复制”改为单写入者、带 journal 的目录交换：先完整校验
+  私有 incoming tree 并持久化 digest，再移开 live Skill；捕获到 commit 失败时
+  原样恢复 previous，进程中断后安全恢复或 fail closed。
+- 新增纯标准库 benchmark CLI，分别计量 YAML frontmatter 与 Skill 正文，并区分
+  strict-progressive、auto-discovery 和 C bypass。eager-all-documents 是不受支持的
+  合成反模式，其负载为 metadata `12,011` + body `98,695` = total `110,706`
+  bytes；受支持路径的总负载为 strict A `7,176`、strict B `4,668`、auto A
+  `2,783`、auto B `2,375`、C `0`。这些是合成文件大小，不是 token 计量。
+- 盲路由改用不透明 case ID，正确计分 `abstain`，并覆盖工具不可用、缺失指南、
+  授权边界、显式选择和引用内容中的对抗性工具名。用完整保留证据的隔离 Claude Code
+  smoke test 取代旧的不完整运行：请求 `claude-fable-5`/`max`，总分 `18/18`，
+  A `11/11`、B `4/4`、C `3/3`、预期 abstention `4/4`。这是小型合成
+  catalog-matching 测试，不代表泛化或生产准确率；模型名称是 CLI 请求值，不能证明
+  后端使用了不可变 snapshot。
+
 ## [0.2.0] - 2026-07-13
 
 ### Added / 新增
@@ -40,8 +106,9 @@ All notable user-visible changes are recorded here. The project follows
 ### Security and behavior / 安全与行为
 
 - Define “all tools” as capabilities registered with or exposed to the target
-  Agent, not every executable on `PATH`. A and B capabilities enter routing;
-  C primitives remain inventory-only.
+  Agent, not every executable on `PATH`. A and B capabilities enter active
+  intent routing; C primitives remain managed in inventory with an exclusion
+  rationale and bypass active routing.
 - Require canonical-source verification, exact commit or artifact pinning,
   non-discoverable staging, and review before activating any remote Skill.
   Insufficient official evidence leaves an A capability unresolved instead of
@@ -54,7 +121,8 @@ All notable user-visible changes are recorded here. The project follows
   are preserved with an explicit warning, and malformed request list fields are
   rejected before any target write.
 - 将“所有工具”限定为目标 Agent 已注册或实际暴露的能力，而不是扫描 `PATH`
-  中的所有程序；A、B 类进入路由，C 类原语只保留在清单中。
+  中的所有程序；A、B 类进入活动意图路由，C 类原语仍纳入受管清单、记录排除
+  理由并绕过活动路由。
 - 远程 Skill 激活前必须确认 canonical source、固定精确 commit 或 artifact
   digest、在非自动发现目录暂存并完成审查；官方证据不足时保持 A 类未解决，
   不生成推测性指南。
@@ -239,6 +307,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.2.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.1
 [0.2.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.0
 [0.1.5]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.5
 [0.1.4]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.1.4

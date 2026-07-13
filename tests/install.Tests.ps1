@@ -2,6 +2,7 @@ BeforeAll {
 $here = $PSScriptRoot
 $repoRoot = Split-Path -Parent $here
 $script:CreatedTestRoots = New-Object System.Collections.Generic.List[string]
+$script:CreatedTestProcesses = New-Object System.Collections.Generic.List[object]
 $script:IsWindowsTest = [IO.Path]::DirectorySeparatorChar -eq [char]'\'
 $script:IsMacOSTest = (-not $script:IsWindowsTest) -and
     [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
@@ -209,6 +210,143 @@ function Get-SnapshotDirectories {
     return @(Get-ChildItem -LiteralPath $BackupParent -Directory | Where-Object { $_.Name -like 'install-*' })
 }
 
+function Get-SkillTransactionContainer {
+    param([string]$SkillPath)
+
+    $parent = Split-Path -Parent $SkillPath
+    return Join-Path $parent '.agent-tool-routing-transactions'
+}
+
+function Get-TestInstallMutexName {
+    param([string]$ConfigRoot)
+
+    $comparisonRoot = [IO.Path]::GetFullPath($ConfigRoot)
+    $root = [IO.Path]::GetPathRoot($comparisonRoot)
+    while (($comparisonRoot.Length -gt $root.Length) -and
+        (($comparisonRoot[$comparisonRoot.Length - 1] -eq [char]'\') -or
+            ($comparisonRoot[$comparisonRoot.Length - 1] -eq [char]'/'))) {
+        $comparisonRoot = $comparisonRoot.Substring(0, $comparisonRoot.Length - 1)
+    }
+    if ($script:IsWindowsTest -or $script:IsMacOSTest) {
+        $comparisonRoot = $comparisonRoot.ToUpperInvariant()
+    }
+    $utf8 = New-Object Text.UTF8Encoding -ArgumentList $false
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha256.ComputeHash($utf8.GetBytes($comparisonRoot))
+    } finally {
+        $sha256.Dispose()
+    }
+    $hex = ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+    $prefix = if ($script:IsWindowsTest) {
+        'Global\AgentToolRoutingSkill.Install.'
+    } else {
+        'AgentToolRoutingSkill.Install.'
+    }
+    return $prefix + $hex
+}
+
+function Start-TestMutexHolder {
+    param(
+        [string]$Root,
+        [string]$MutexName
+    )
+
+    $holderScript = Join-Path $Root 'hold-install-mutex.ps1'
+    $readyPath = Join-Path $Root 'mutex-ready'
+    $holderText = @'
+param([string]$MutexName, [string]$ReadyPath)
+$ErrorActionPreference = 'Stop'
+$mutex = New-Object System.Threading.Mutex -ArgumentList $false, $MutexName
+$acquired = $false
+try {
+    $acquired = $mutex.WaitOne(0)
+    if (-not $acquired) { exit 2 }
+    [IO.File]::WriteAllText($ReadyPath, 'ready')
+    while ($true) { Start-Sleep -Seconds 1 }
+} finally {
+    if ($acquired) { $mutex.ReleaseMutex() }
+    $mutex.Dispose()
+}
+'@
+    [IO.File]::WriteAllText($holderScript, $holderText, (New-Object Text.UTF8Encoding $false))
+    $executable = (Get-Process -Id $PID).Path
+    $arguments = @('-NoLogo', '-NoProfile', '-File', $holderScript, $MutexName, $readyPath)
+    if ($script:IsWindowsTest) {
+        $process = Start-Process -FilePath $executable -ArgumentList $arguments `
+            -PassThru -WindowStyle Hidden
+    } else {
+        $process = Start-Process -FilePath $executable -ArgumentList $arguments -PassThru
+    }
+    [void]$script:CreatedTestProcesses.Add($process)
+
+    for ($attempt = 0; $attempt -lt 100; $attempt++) {
+        if (Test-Path -LiteralPath $readyPath -PathType Leaf) {
+            return $process
+        }
+        if ($process.HasExited) {
+            throw "Mutex holder exited before acquiring the test lock (exit $($process.ExitCode))."
+        }
+        Start-Sleep -Milliseconds 50
+        $process.Refresh()
+    }
+    throw 'Timed out waiting for the mutex holder process.'
+}
+
+function Invoke-InstallerInFreshProcess {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    $executable = (Get-Process -Id $PID).Path
+    $quote = {
+        param([string]$Value)
+        return "'" + $Value.Replace("'", "''") + "'"
+    }
+    $commandParts = @('&', (& $quote $installer)) + @(
+        $Arguments | ForEach-Object {
+            $argument = [string]$_
+            if ($argument -match '^-[A-Za-z][A-Za-z0-9]*$') {
+                $argument
+            } else {
+                & $quote $argument
+            }
+        }
+    )
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes(($commandParts -join ' '))
+    )
+    $stdoutPath = Join-Path ([IO.Path]::GetTempPath()) `
+        ('agent-routing-child-' + [guid]::NewGuid().ToString('N') + '.stdout')
+    $stderrPath = Join-Path ([IO.Path]::GetTempPath()) `
+        ('agent-routing-child-' + [guid]::NewGuid().ToString('N') + '.stderr')
+    try {
+        $start = @{
+            FilePath = $executable
+            ArgumentList = @('-NoLogo', '-NoProfile', '-EncodedCommand', $encoded)
+            PassThru = $true
+            Wait = $true
+            RedirectStandardOutput = $stdoutPath
+            RedirectStandardError = $stderrPath
+        }
+        if ($script:IsWindowsTest) {
+            $start.WindowStyle = 'Hidden'
+        }
+        $process = Start-Process @start
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) {
+            Get-Content -LiteralPath $stdoutPath -Raw
+        } else { '' }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) {
+            Get-Content -LiteralPath $stderrPath -Raw
+        } else { '' }
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Output = ([string]$stdout) + ([string]$stderr)
+        }
+    } finally {
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force `
+            -ErrorAction SilentlyContinue
+    }
+}
+
 function New-ToolIndexDependency {
     param([string]$ConfigRoot)
 
@@ -239,9 +377,23 @@ function Assert-PendingInitialIndexState {
 Describe 'scripts/install.ps1' {
     BeforeEach {
         $script:CreatedTestRoots.Clear()
+        $script:CreatedTestProcesses.Clear()
     }
 
     AfterEach {
+        foreach ($process in @($script:CreatedTestProcesses.ToArray())) {
+            try {
+                if (-not $process.HasExited) {
+                    Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                    $process.WaitForExit(5000) | Out-Null
+                }
+            } catch {
+                Write-Warning "Could not stop test helper process $($process.Id): $($_.Exception.Message)"
+            } finally {
+                $process.Dispose()
+            }
+        }
+        $script:CreatedTestProcesses.Clear()
         foreach ($root in @($script:CreatedTestRoots.ToArray())) {
             Remove-TestDirectory -Path $root
         }
@@ -289,6 +441,283 @@ Describe 'scripts/install.ps1' {
         Assert-Equal $genericMatches.Count 0
     }
 
+    It 'rejects a concurrent installer before writing targets or backups' {
+        $layout = New-InstallLayout 'single-writer-lock'
+        $mutexName = Get-TestInstallMutexName -ConfigRoot $layout.Config
+        $null = Start-TestMutexHolder -Root $layout.Root -MutexName $mutexName
+
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('installation is already active')) `
+            "Unexpected installer error: $errorMessage"
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
+        Assert-Equal @(Get-SnapshotDirectories $layout.Backup).Count 0
+    }
+
+    It 'replaces an existing skill through a journaled transaction and rollback restores it' {
+        $layout = New-InstallLayout 'transaction-swap-success'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $sentinel = Join-Path $layout.Skill 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'original-skill')
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+
+        Assert-False (Test-Path -LiteralPath $sentinel)
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) $projectVersion
+        Assert-False (Test-Path -LiteralPath (Get-SkillTransactionContainer -SkillPath $layout.Skill))
+        $snapshot = @(Get-SnapshotDirectories $layout.Backup)[0]
+        $rollback = Join-Path $snapshot.FullName 'rollback.ps1'
+
+        $null = & $rollback
+
+        Assert-Equal ([IO.File]::ReadAllText($sentinel)) 'original-skill'
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Skill 'VERSION'))
+        Assert-False (Test-Path -LiteralPath (Get-SkillTransactionContainer -SkillPath $layout.Skill))
+    }
+
+    It 'recovers a journaled live-to-previous crash before taking the new backup' {
+        $layout = New-InstallLayout 'transaction-crash-recovery'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $sentinel = Join-Path $layout.Skill 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'pre-crash-skill')
+        Mock Remove-Item { throw 'simulated previous cleanup interruption' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'previous')
+        }
+
+        $firstBackup = Join-Path $layout.Root 'first-backup'
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $firstBackup
+        $container = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        $transactions = @(Get-ChildItem -LiteralPath $container -Directory)
+        Assert-Equal $transactions.Count 1
+        $transactionRoot = $transactions[0].FullName
+        $incoming = Join-Path $transactionRoot 'incoming'
+        $previous = Join-Path $transactionRoot 'previous'
+        Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'prepared-tree.json'))
+        Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'phase-20-incoming-prepared.json'))
+        Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'phase-30-live-displaced.json'))
+        $committedPhase = Join-Path $transactionRoot 'phase-40-live-committed.json'
+        Assert-True (Test-Path -LiteralPath $committedPhase)
+        # Reconstruct the exact state after live -> previous and before
+        # incoming -> live: phase 20/30, previous + incoming, and no live.
+        [IO.File]::Delete($committedPhase)
+        Move-Item -LiteralPath $layout.Skill -Destination $incoming
+
+        Assert-False (Test-Path -LiteralPath (Join-Path $container 'SKILL.md'))
+        Assert-True (Test-Path -LiteralPath (Join-Path $incoming 'SKILL.md'))
+        Assert-False (Test-Path -LiteralPath $layout.Skill)
+        Assert-False (Test-Path -LiteralPath $committedPhase)
+
+        $recoveryBackup = Join-Path $layout.Root 'recovery-backup'
+        $recovery = Invoke-InstallerInFreshProcess -Arguments @(
+            '-Target', 'codex',
+            '-UserProfile', $layout.Profile,
+            '-AllowCustomProfile',
+            '-CodexHome', $layout.Config,
+            '-BackupRoot', $recoveryBackup
+        )
+
+        Assert-Equal $recovery.ExitCode 0 $recovery.Output
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) $projectVersion
+        Assert-False (Test-Path -LiteralPath $container)
+        $snapshot = @(Get-SnapshotDirectories $recoveryBackup)[0]
+        $rollback = Join-Path $snapshot.FullName 'rollback.ps1'
+
+        $null = & $rollback
+
+        Assert-Equal ([IO.File]::ReadAllText($sentinel)) 'pre-crash-skill'
+        Assert-False (Test-Path -LiteralPath (Join-Path $layout.Skill 'VERSION'))
+    }
+
+    It 'refuses to delete previous data when a retained committed live tree was modified' {
+        $layout = New-InstallLayout 'transaction-tampered-live'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $oldSentinel = Join-Path $layout.Skill 'old-sentinel.txt'
+        [IO.File]::WriteAllText($oldSentinel, 'old-skill')
+        Mock Remove-Item { throw 'simulated previous cleanup interruption' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'previous')
+        }
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot (Join-Path $layout.Root 'first-backup')
+        $container = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        $transactionRoot = @(Get-ChildItem -LiteralPath $container -Directory)[0].FullName
+        $previous = Join-Path $transactionRoot 'previous'
+        $liveSkillFile = Join-Path $layout.Skill 'SKILL.md'
+        [IO.File]::AppendAllText($liveSkillFile, "`npost-crash modification`n")
+        $tamperedBytes = [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveSkillFile))
+        $recoveryBackup = Join-Path $layout.Root 'recovery-backup'
+
+        $recovery = Invoke-InstallerInFreshProcess -Arguments @(
+            '-Target', 'codex',
+            '-UserProfile', $layout.Profile,
+            '-AllowCustomProfile',
+            '-CodexHome', $layout.Config,
+            '-BackupRoot', $recoveryBackup
+        )
+        $errorMessage = $recovery.Output
+
+        Assert-True ($recovery.ExitCode -ne 0)
+        Assert-True ($errorMessage.Contains('does not match the prepared incoming tree')) `
+            "Unexpected installer error: $errorMessage"
+        Assert-False (Test-Path -LiteralPath $recoveryBackup)
+        Assert-True (Test-Path -LiteralPath $previous)
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $previous 'old-sentinel.txt'))) 'old-skill'
+        Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'transaction.json'))
+        Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($liveSkillFile))) $tamperedBytes
+    }
+
+    It 'finalizes retained committed data only when live matches the prepared tree' {
+        $layout = New-InstallLayout 'transaction-matching-live'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $oldSentinel = Join-Path $layout.Skill 'old-sentinel.txt'
+        [IO.File]::WriteAllText($oldSentinel, 'old-skill')
+        Mock Remove-Item { throw 'simulated previous cleanup interruption' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'previous')
+        }
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot (Join-Path $layout.Root 'first-backup')
+        $container = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        Assert-True (Test-Path -LiteralPath $container)
+        $recoveryBackup = Join-Path $layout.Root 'recovery-backup'
+
+        $recovery = Invoke-InstallerInFreshProcess -Arguments @(
+            '-Target', 'codex',
+            '-UserProfile', $layout.Profile,
+            '-AllowCustomProfile',
+            '-CodexHome', $layout.Config,
+            '-BackupRoot', $recoveryBackup
+        )
+
+        Assert-Equal $recovery.ExitCode 0 $recovery.Output
+        Assert-False (Test-Path -LiteralPath $container)
+        $snapshot = @(Get-SnapshotDirectories $recoveryBackup)[0]
+        $null = & (Join-Path $snapshot.FullName 'rollback.ps1')
+        Assert-False (Test-Path -LiteralPath $oldSentinel)
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) $projectVersion
+    }
+
+    It 'rejects timestamp-only phase markers before recovery writes or backups' {
+        $layout = New-InstallLayout 'transaction-invalid-phase-marker'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $layout.Skill 'old-sentinel.txt'), 'old-skill')
+        Mock Remove-Item { throw 'simulated previous cleanup interruption' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'previous')
+        }
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot (Join-Path $layout.Root 'first-backup')
+        $container = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        $transactionRoot = @(Get-ChildItem -LiteralPath $container -Directory)[0].FullName
+        $previous = Join-Path $transactionRoot 'previous'
+        $phasePath = Join-Path $transactionRoot 'phase-40-live-committed.json'
+        [IO.File]::WriteAllText(
+            $phasePath,
+            ('{"recorded_at_utc":"' + [DateTime]::UtcNow.ToString('o') + '"}' + "`n"),
+            (New-Object Text.UTF8Encoding $false)
+        )
+        $recoveryBackup = Join-Path $layout.Root 'recovery-backup'
+
+        $recovery = Invoke-InstallerInFreshProcess -Arguments @(
+            '-Target', 'codex',
+            '-UserProfile', $layout.Profile,
+            '-AllowCustomProfile',
+            '-CodexHome', $layout.Config,
+            '-BackupRoot', $recoveryBackup
+        )
+        $errorMessage = $recovery.Output
+
+        Assert-True ($recovery.ExitCode -ne 0)
+        Assert-True ($errorMessage.Contains('phase marker metadata is invalid')) `
+            "Unexpected installer error: $errorMessage"
+        Assert-False (Test-Path -LiteralPath $recoveryBackup)
+        Assert-True (Test-Path -LiteralPath $previous)
+        Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'transaction.json'))
+    }
+
+    It 'keeps the existing skill and cleans the non-discoverable transaction when incoming copy fails' {
+        $layout = New-InstallLayout 'transaction-copy-failure'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $sentinel = Join-Path $layout.Skill 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'original-skill')
+        $expectedTransactionContainer = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        Mock Copy-Item {
+            $transactionRoot = Split-Path -Parent ([string]$Destination)
+            $observedTransactionContainer = Split-Path -Parent $transactionRoot
+            Assert-False (Test-Path -LiteralPath (
+                Join-Path $observedTransactionContainer 'SKILL.md'
+            ))
+            Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'transaction.json'))
+            throw 'simulated incoming copy failure'
+        } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$Destination)) -and
+                ([IO.Path]::GetFileName([string]$Destination) -eq 'incoming') -and
+                ([IO.Path]::GetFileName((Split-Path -Parent ([string]$Destination))) -like 'txn-*')
+        }
+
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('Could not prepare a complete incoming skill copy')) `
+            "Unexpected installer error: $errorMessage"
+        Assert-Equal ([IO.File]::ReadAllText($sentinel)) 'original-skill'
+        Assert-False (Test-Path -LiteralPath $expectedTransactionContainer)
+    }
+
+    It 'restores the existing skill exactly when the incoming transaction commit fails' {
+        $layout = New-InstallLayout 'transaction-commit-failure'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        $sentinel = Join-Path $layout.Skill 'sentinel.txt'
+        [IO.File]::WriteAllText($sentinel, 'original-skill')
+        Mock Move-Item { throw 'simulated incoming commit failure' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'incoming') -and
+                ([string]::Equals(
+                    [IO.Path]::GetFullPath([string]$Destination),
+                    [IO.Path]::GetFullPath($layout.Skill),
+                    [StringComparison]::OrdinalIgnoreCase
+                ))
+        }
+
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('previous skill was restored exactly')) `
+            "Unexpected installer error: $errorMessage"
+        Assert-False ($errorMessage.Contains('automatic rollback also failed'))
+        Assert-Equal ([IO.File]::ReadAllText($sentinel)) 'original-skill'
+        Assert-False (Test-Path -LiteralPath (Get-SkillTransactionContainer -SkillPath $layout.Skill))
+    }
+
     It 'initializes pending routing state without activating runtime routing' {
         $layout = New-InstallLayout 'initialize-routing'
 
@@ -298,6 +727,7 @@ Describe 'scripts/install.ps1' {
 
         Assert-PendingInitialIndexState -ConfigRoot $layout.Config -TargetAgent 'codex'
         Assert-True ($output.Contains('process the request before returning to ordinary work'))
+        Assert-True ($output.Contains('next fresh session'))
         Assert-False ($output.Contains('Starting the codex'))
         Assert-False (Test-Path -LiteralPath (Join-Path $layout.Skill 'state'))
         $global = [IO.File]::ReadAllText($layout.Global)

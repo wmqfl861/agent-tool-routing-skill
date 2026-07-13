@@ -280,6 +280,101 @@ function Get-ComparisonPath {
     return $full
 }
 
+function Get-AgentInstallMutexName {
+    param([Parameter(Mandatory = $true)][string]$ConfigRoot)
+
+    $comparisonRoot = Get-ComparisonPath -Path $ConfigRoot
+    if ($IsWindowsPlatform -or $IsMacOSPlatform) {
+        $comparisonRoot = $comparisonRoot.ToUpperInvariant()
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha256.ComputeHash($utf8.GetBytes($comparisonRoot))
+    } finally {
+        $sha256.Dispose()
+    }
+    $hex = ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+    $prefix = if ($IsWindowsPlatform) {
+        'Global\AgentToolRoutingSkill.Install.'
+    } else {
+        'AgentToolRoutingSkill.Install.'
+    }
+    return $prefix + $hex
+}
+
+function Exit-AgentInstallLocks {
+    param([AllowEmptyCollection()][object[]]$Locks)
+
+    for ($index = $Locks.Count - 1; $index -ge 0; $index--) {
+        $entry = $Locks[$index]
+        if ($entry.Acquired) {
+            try {
+                $entry.Mutex.ReleaseMutex()
+            } catch {
+                Write-Warning "Could not release install lock '$($entry.Name)' for '$($entry.ConfigRoot)'. $($_.Exception.Message)"
+            }
+        }
+        try {
+            $entry.Mutex.Dispose()
+        } catch {
+            Write-Warning "Could not dispose install lock '$($entry.Name)' for '$($entry.ConfigRoot)'. $($_.Exception.Message)"
+        }
+    }
+}
+
+function Enter-AgentInstallLocks {
+    param([Parameter(Mandatory = $true)][object[]]$Configs)
+
+    $entriesByName = New-Object 'System.Collections.Generic.Dictionary[string,object]' `
+        ([System.StringComparer]::Ordinal)
+    foreach ($config in $Configs) {
+        $name = Get-AgentInstallMutexName -ConfigRoot $config.ConfigRoot
+        if (-not $entriesByName.ContainsKey($name)) {
+            $entriesByName.Add($name, [pscustomobject]@{
+                Name = $name
+                ConfigRoot = Get-ComparisonPath -Path $config.ConfigRoot
+                Mutex = $null
+                Acquired = $false
+            })
+        }
+    }
+
+    $locks = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($name in @($entriesByName.Keys | Sort-Object)) {
+            $entry = $entriesByName[$name]
+            try {
+                $entry.Mutex = New-Object System.Threading.Mutex -ArgumentList $false, $entry.Name
+                try {
+                    $entry.Acquired = $entry.Mutex.WaitOne(0)
+                } catch [System.Threading.AbandonedMutexException] {
+                    # WaitOne grants ownership when it reports an abandoned mutex.
+                    $entry.Acquired = $true
+                    Write-Warning "Recovered abandoned install lock for '$($entry.ConfigRoot)'. The installer will inspect any retained transaction journal before planning changes."
+                }
+            } catch {
+                if ($null -ne $entry.Mutex) {
+                    $entry.Mutex.Dispose()
+                }
+                throw "Could not acquire the install lock for '$($entry.ConfigRoot)'. $($_.Exception.Message)"
+            }
+
+            if (-not $entry.Acquired) {
+                $entry.Mutex.Dispose()
+                throw "Another agent-tool-routing-skill installation is already active for '$($entry.ConfigRoot)'. No target or backup files were written; wait for that installation to finish and retry."
+            }
+            $locks.Add($entry)
+        }
+    } catch {
+        Exit-AgentInstallLocks -Locks $locks.ToArray()
+        throw
+    }
+
+    return ,$locks.ToArray()
+}
+
 function Join-PathSegments {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -1152,9 +1247,9 @@ function Add-BackupAndRollback {
             $unixModeValue = [int][System.IO.File]::GetUnixFileMode($Path)
             $unixModeArgument = " -UnixModeValue $unixModeValue"
         }
-        $Commands.Add("Restore-AgentToolRoutingPath -Path $quotedPath -BackupPath $quotedBackup$unixModeArgument")
+        $Commands.Add("if (Test-AgentToolRoutingRollbackSelected -Path $quotedPath -OnlyPaths `$OnlyPath) { Restore-AgentToolRoutingPath -Path $quotedPath -BackupPath $quotedBackup$unixModeArgument }")
     } else {
-        $Commands.Add("if (Test-Path -LiteralPath $quotedPath) { Remove-Item -LiteralPath $quotedPath -Recurse -Force }")
+        $Commands.Add("if ((Test-AgentToolRoutingRollbackSelected -Path $quotedPath -OnlyPaths `$OnlyPath) -and (Test-Path -LiteralPath $quotedPath)) { Remove-Item -LiteralPath $quotedPath -Recurse -Force }")
     }
 }
 
@@ -1227,20 +1322,961 @@ function Stage-AgentSkill {
     return $stageDir
 }
 
+function Get-FileSha256Base64 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::Read
+    )
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [Convert]::ToBase64String($sha256.ComputeHash($stream))
+    } finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
+function Get-VerifiedDirectoryManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Purpose
+    )
+
+    Assert-NoReparsePointTree -Path $Root -Purpose $Purpose
+    $rootItem = Get-FileSystemItemIncludingBrokenLink -Path $Root
+    if (($null -eq $rootItem) -or (-not $rootItem.PSIsContainer)) {
+        throw "Expected an ordinary directory for ${Purpose}: $Root"
+    }
+
+    $manifest = New-Object 'System.Collections.Generic.Dictionary[string,object]' `
+        ([System.StringComparer]::Ordinal)
+    $pending = New-Object System.Collections.Generic.Stack[object]
+    $pending.Push([pscustomobject]@{
+        FullPath = $rootItem.FullName
+        RelativePath = ''
+    })
+
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        foreach ($child in @(Get-ChildItem -LiteralPath $current.FullPath -Force -ErrorAction Stop)) {
+            if (Test-IsFileSystemLink -Item $child) {
+                throw "Refusing $Purpose through reparse point '$($child.FullName)'."
+            }
+
+            $relativePath = if ([string]::IsNullOrEmpty($current.RelativePath)) {
+                $child.Name
+            } else {
+                $current.RelativePath + '/' + $child.Name
+            }
+            if ($manifest.ContainsKey($relativePath)) {
+                throw "Duplicate relative path while validating ${Purpose}: $relativePath"
+            }
+
+            if ($child.PSIsContainer) {
+                $manifest.Add($relativePath, [pscustomobject]@{
+                    Kind = 'directory'
+                    Length = [int64]0
+                    Digest = ''
+                })
+                $pending.Push([pscustomobject]@{
+                    FullPath = $child.FullName
+                    RelativePath = $relativePath
+                })
+            } elseif ($child -is [System.IO.FileInfo]) {
+                $manifest.Add($relativePath, [pscustomobject]@{
+                    Kind = 'file'
+                    Length = [int64]$child.Length
+                    Digest = Get-FileSha256Base64 -Path $child.FullName
+                })
+            } else {
+                throw "Refusing non-file entry '$($child.FullName)' while validating $Purpose."
+            }
+        }
+    }
+
+    return ,$manifest
+}
+
+function Assert-DirectoryCopyMatches {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Copy
+    )
+
+    $sourceManifest = Get-VerifiedDirectoryManifest -Root $Source -Purpose 'staged skill copy source'
+    $copyManifest = Get-VerifiedDirectoryManifest -Root $Copy -Purpose 'incoming skill copy verification'
+    if ($sourceManifest.Count -ne $copyManifest.Count) {
+        throw "Incoming skill copy entry count mismatch: expected $($sourceManifest.Count), got $($copyManifest.Count)."
+    }
+
+    foreach ($relativePath in $sourceManifest.Keys) {
+        if (-not $copyManifest.ContainsKey($relativePath)) {
+            throw "Incoming skill copy is missing '$relativePath'."
+        }
+        $expected = $sourceManifest[$relativePath]
+        $actual = $copyManifest[$relativePath]
+        if (-not [string]::Equals($expected.Kind, $actual.Kind, [StringComparison]::Ordinal)) {
+            throw "Incoming skill copy type mismatch for '$relativePath': expected $($expected.Kind), got $($actual.Kind)."
+        }
+        if (($expected.Kind -eq 'file') -and
+            (($expected.Length -ne $actual.Length) -or
+                (-not [string]::Equals($expected.Digest, $actual.Digest, [StringComparison]::Ordinal)))) {
+            throw "Incoming skill copy content mismatch for '$relativePath'."
+        }
+    }
+}
+
+function Convert-BytesToLowerHex {
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+    return ([BitConverter]::ToString($Bytes)).Replace('-', '').ToLowerInvariant()
+}
+
+function Convert-LowerHexToBytes {
+    param([Parameter(Mandatory = $true)][string]$Hex)
+
+    if (($Hex.Length % 2) -ne 0 -or ($Hex -notmatch '^[0-9a-f]*$')) {
+        throw 'Expected lowercase hexadecimal text with an even length.'
+    }
+    $bytes = New-Object byte[] ($Hex.Length / 2)
+    for ($index = 0; $index -lt $bytes.Length; $index++) {
+        $bytes[$index] = [Convert]::ToByte($Hex.Substring($index * 2, 2), 16)
+    }
+    return ,$bytes
+}
+
+function Write-UInt32BigEndian {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Stream]$Stream,
+        [Parameter(Mandatory = $true)][uint32]$Value
+    )
+
+    $bytes = New-Object byte[] 4
+    for ($index = 3; $index -ge 0; $index--) {
+        $bytes[$index] = [byte]($Value -band 0xff)
+        $Value = $Value -shr 8
+    }
+    $Stream.Write($bytes, 0, $bytes.Length)
+}
+
+function Write-UInt64BigEndian {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Stream]$Stream,
+        [Parameter(Mandatory = $true)][uint64]$Value
+    )
+
+    $bytes = New-Object byte[] 8
+    for ($index = 7; $index -ge 0; $index--) {
+        $bytes[$index] = [byte]($Value -band 0xff)
+        $Value = $Value -shr 8
+    }
+    $Stream.Write($bytes, 0, $bytes.Length)
+}
+
+function Get-CanonicalPreparedTreeSha256 {
+    param([Parameter(Mandatory = $true)][object[]]$Entries)
+
+    # Entries are ordinal-path sorted. Each record is kind, big-endian UTF-8
+    # path length/path, big-endian length, and raw SHA-256 bytes for files.
+    $utf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    $stream = New-Object System.IO.MemoryStream
+    try {
+        $magic = $utf8.GetBytes("ATRS-TREE-V1`0")
+        $stream.Write($magic, 0, $magic.Length)
+        foreach ($entry in $Entries) {
+            $kindByte = if ($entry.Kind -eq 'directory') { [byte]0x44 } else { [byte]0x46 }
+            $stream.WriteByte($kindByte)
+            $pathBytes = $utf8.GetBytes([string]$entry.Path)
+            if ($pathBytes.Length -gt [uint32]::MaxValue) {
+                throw "Prepared tree path is too long to canonicalize: $($entry.Path)"
+            }
+            Write-UInt32BigEndian -Stream $stream -Value ([uint32]$pathBytes.Length)
+            $stream.Write($pathBytes, 0, $pathBytes.Length)
+            Write-UInt64BigEndian -Stream $stream -Value ([uint64]$entry.Length)
+            if ($entry.Kind -eq 'file') {
+                $digestBytes = Convert-LowerHexToBytes -Hex ([string]$entry.Sha256)
+                if ($digestBytes.Length -ne 32) {
+                    throw "Prepared tree file digest must be 32 bytes: $($entry.Path)"
+                }
+                $stream.WriteByte([byte]32)
+                $stream.Write($digestBytes, 0, $digestBytes.Length)
+            } else {
+                $stream.WriteByte([byte]0)
+            }
+        }
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $stream.Position = 0
+            return Convert-BytesToLowerHex -Bytes $sha256.ComputeHash($stream)
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-PreparedTreeDescriptor {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Purpose
+    )
+
+    $manifest = Get-VerifiedDirectoryManifest -Root $Root -Purpose $Purpose
+    [string[]]$paths = @($manifest.Keys)
+    [Array]::Sort($paths, [System.StringComparer]::Ordinal)
+    $entries = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $paths) {
+        $sourceEntry = $manifest[$path]
+        $sha256 = if ($sourceEntry.Kind -eq 'file') {
+            Convert-BytesToLowerHex -Bytes ([Convert]::FromBase64String($sourceEntry.Digest))
+        } else {
+            ''
+        }
+        $entries.Add([pscustomobject][ordered]@{
+            Path = $path
+            Kind = [string]$sourceEntry.Kind
+            Length = [int64]$sourceEntry.Length
+            Sha256 = $sha256
+        })
+    }
+    $entryArray = @($entries.ToArray())
+    return [pscustomobject]@{
+        Entries = $entryArray
+        TreeSha256 = Get-CanonicalPreparedTreeSha256 -Entries $entryArray
+    }
+}
+
+function Write-PreparedTreeManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$TransactionRoot,
+        [Parameter(Mandatory = $true)][string]$IncomingRoot
+    )
+
+    $descriptor = Get-PreparedTreeDescriptor -Root $IncomingRoot `
+        -Purpose 'prepared incoming skill tree'
+    $document = [ordered]@{
+        schema_version = 1
+        algorithm = 'sha256'
+        canonicalization = 'atrs-tree-v1'
+        tree_sha256 = $descriptor.TreeSha256
+        entries = @($descriptor.Entries | ForEach-Object {
+            [ordered]@{
+                path = $_.Path
+                kind = $_.Kind
+                length = $_.Length
+                sha256 = $_.Sha256
+            }
+        })
+    }
+    $text = ($document | ConvertTo-Json -Depth 5).Replace("`r`n", "`n") + "`n"
+    Write-NewUtf8NoBomFile -Path (Join-Path $TransactionRoot 'prepared-tree.json') `
+        -Content $text
+    return $descriptor
+}
+
+function Read-StrictTransactionJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][int64]$MaximumBytes,
+        [Parameter(Mandatory = $true)][string]$Purpose
+    )
+
+    Assert-NoExistingReparsePoint -Path $Path -Purpose $Purpose
+    $item = Get-FileSystemItemIncludingBrokenLink -Path $Path
+    if (($null -eq $item) -or $item.PSIsContainer -or (Test-IsFileSystemLink -Item $item)) {
+        throw "${Purpose} is missing or is not an ordinary file: $Path"
+    }
+    if ($item.Length -gt $MaximumBytes) {
+        throw "${Purpose} exceeds $MaximumBytes bytes: $Path"
+    }
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $strictUtf8 = New-Object System.Text.UTF8Encoding -ArgumentList $false, $true
+        $text = $strictUtf8.GetString($bytes)
+        if (($text.Length -gt 0) -and ($text[0] -eq [char]0xFEFF)) {
+            throw 'BOM is not allowed.'
+        }
+        return $text | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "${Purpose} must be UTF-8 JSON without BOM: $Path. $($_.Exception.Message)"
+    }
+}
+
+function Read-PreparedTreeManifest {
+    param([Parameter(Mandatory = $true)][string]$TransactionRoot)
+
+    $path = Join-Path $TransactionRoot 'prepared-tree.json'
+    if ($null -eq (Get-FileSystemItemIncludingBrokenLink -Path $path)) {
+        return $null
+    }
+    $document = Read-StrictTransactionJson -Path $path -MaximumBytes 4194304 `
+        -Purpose 'prepared tree manifest'
+    $requiredProperties = @(
+        'schema_version', 'algorithm', 'canonicalization', 'tree_sha256', 'entries'
+    )
+    $hasRequiredProperties = $true
+    foreach ($propertyName in $requiredProperties) {
+        if ($null -eq $document.PSObject.Properties[$propertyName]) {
+            $hasRequiredProperties = $false
+            break
+        }
+    }
+    if ((-not $hasRequiredProperties) -or
+        ($document.schema_version -ne 1) -or
+        (-not [string]::Equals([string]$document.algorithm, 'sha256', [StringComparison]::Ordinal)) -or
+        (-not [string]::Equals([string]$document.canonicalization, 'atrs-tree-v1', [StringComparison]::Ordinal)) -or
+        ([string]$document.tree_sha256 -notmatch '^[0-9a-f]{64}$') -or
+        (-not ($document.entries -is [System.Array]))) {
+        throw "Prepared tree manifest metadata is invalid: $path"
+    }
+
+    $rawEntries = @($document.entries)
+    if ($rawEntries.Count -gt 100000) {
+        throw "Prepared tree manifest has too many entries: $path"
+    }
+    $entries = New-Object System.Collections.Generic.List[object]
+    $previousPath = $null
+    foreach ($rawEntry in $rawEntries) {
+        $entryPath = [string]$rawEntry.path
+        $kind = [string]$rawEntry.kind
+        $lengthValue = $rawEntry.length
+        $sha256 = [string]$rawEntry.sha256
+        $segments = @($entryPath.Split('/'))
+        $hasUnsafeSegment = $false
+        foreach ($segment in $segments) {
+            if ([string]::IsNullOrEmpty($segment) -or ($segment -eq '.') -or ($segment -eq '..')) {
+                $hasUnsafeSegment = $true
+                break
+            }
+        }
+        $lengthIsInteger = ($lengthValue -is [int]) -or ($lengthValue -is [long]) -or
+            ($lengthValue -is [uint32]) -or ($lengthValue -is [uint64])
+        if ([string]::IsNullOrEmpty($entryPath) -or $entryPath.StartsWith('/') -or
+            $hasUnsafeSegment -or (-not $lengthIsInteger) -or ([int64]$lengthValue -lt 0) -or
+            (($kind -ne 'file') -and ($kind -ne 'directory')) -or
+            (($kind -eq 'file') -and ($sha256 -notmatch '^[0-9a-f]{64}$')) -or
+            (($kind -eq 'directory') -and (([int64]$lengthValue -ne 0) -or ($sha256 -ne ''))) -or
+            (($null -ne $previousPath) -and
+                ([System.StringComparer]::Ordinal.Compare($previousPath, $entryPath) -ge 0))) {
+            throw "Prepared tree manifest contains an invalid or unsorted entry: $path"
+        }
+        $entries.Add([pscustomobject]@{
+            Path = $entryPath
+            Kind = $kind
+            Length = [int64]$lengthValue
+            Sha256 = $sha256
+        })
+        $previousPath = $entryPath
+    }
+    $entryArray = @($entries.ToArray())
+    $computed = Get-CanonicalPreparedTreeSha256 -Entries $entryArray
+    if (-not [string]::Equals(
+            $computed,
+            [string]$document.tree_sha256,
+            [StringComparison]::Ordinal)) {
+        throw "Prepared tree manifest digest does not match its entries: $path"
+    }
+    return [pscustomobject]@{
+        Path = $path
+        Entries = $entryArray
+        TreeSha256 = $computed
+    }
+}
+
+function Assert-PreparedTreeMatches {
+    param(
+        [Parameter(Mandatory = $true)][object]$Expected,
+        [Parameter(Mandatory = $true)][string]$ActualRoot,
+        [Parameter(Mandatory = $true)][string]$TransactionRoot
+    )
+
+    $actual = Get-PreparedTreeDescriptor -Root $ActualRoot `
+        -Purpose 'retained committed live skill verification'
+    $matches = [string]::Equals(
+        $actual.TreeSha256,
+        $Expected.TreeSha256,
+        [StringComparison]::Ordinal
+    ) -and ($actual.Entries.Count -eq $Expected.Entries.Count)
+    if ($matches) {
+        for ($index = 0; $index -lt $actual.Entries.Count; $index++) {
+            $a = $actual.Entries[$index]
+            $e = $Expected.Entries[$index]
+            if ((-not [string]::Equals($a.Path, $e.Path, [StringComparison]::Ordinal)) -or
+                (-not [string]::Equals($a.Kind, $e.Kind, [StringComparison]::Ordinal)) -or
+                ($a.Length -ne $e.Length) -or
+                (-not [string]::Equals($a.Sha256, $e.Sha256, [StringComparison]::Ordinal))) {
+                $matches = $false
+                break
+            }
+        }
+    }
+    if (-not $matches) {
+        throw "Retained transaction live skill does not match the prepared incoming tree. Recovery stopped without deleting previous data. Live: '$ActualRoot'; previous: '$(Join-Path $TransactionRoot 'previous')'; journal: '$TransactionRoot'."
+    }
+}
+
+function Set-PrivateDirectoryMode {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not $IsWindowsPlatform) {
+        [System.IO.File]::SetUnixFileMode(
+            $Path,
+            [System.IO.UnixFileMode]::UserRead -bor
+                [System.IO.UnixFileMode]::UserWrite -bor
+                [System.IO.UnixFileMode]::UserExecute
+        )
+    }
+}
+
+function Get-SkillTransactionContainerPath {
+    param([Parameter(Mandatory = $true)][string]$SkillRoot)
+    return Join-Path $SkillRoot '.agent-tool-routing-transactions'
+}
+
+function Remove-EmptySkillTransactionContainer {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $item = Get-FileSystemItemIncludingBrokenLink -Path $Path
+    if ($null -eq $item) {
+        return
+    }
+    if ((Test-IsFileSystemLink -Item $item) -or (-not $item.PSIsContainer)) {
+        throw "Skill transaction container is not an ordinary directory: $Path"
+    }
+    if (@(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop).Count -eq 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    }
+}
+
+function Read-SkillTransactionJournal {
+    param(
+        [Parameter(Mandatory = $true)][string]$TransactionRoot,
+        [Parameter(Mandatory = $true)][string]$ExpectedDestinationLeaf
+    )
+
+    $journalPath = Join-Path $TransactionRoot 'transaction.json'
+    $journal = Read-StrictTransactionJson -Path $journalPath -MaximumBytes 16384 `
+        -Purpose 'skill transaction journal'
+
+    $transactionId = [string]$journal.transaction_id
+    $destinationLeaf = [string]$journal.destination_leaf
+    $transactionDirectoryName = [System.IO.Path]::GetFileName($TransactionRoot)
+    $requiredProperties = @(
+        'schema_version', 'transaction_id', 'destination_leaf',
+        'had_destination', 'created_at_utc'
+    )
+    $hasRequiredProperties = $true
+    foreach ($propertyName in $requiredProperties) {
+        if ($null -eq $journal.PSObject.Properties[$propertyName]) {
+            $hasRequiredProperties = $false
+            break
+        }
+    }
+    if ((-not $hasRequiredProperties) -or
+        ($journal.schema_version -ne 1) -or
+        ($transactionId -notmatch '^txn-[0-9a-f]{32}$') -or
+        (-not [string]::Equals($transactionId, $transactionDirectoryName, [StringComparison]::Ordinal)) -or
+        (-not ($journal.had_destination -is [bool])) -or
+        [string]::IsNullOrWhiteSpace([string]$journal.created_at_utc) -or
+        (-not [string]::Equals($destinationLeaf, $ExpectedDestinationLeaf, $PathComparison)) -or
+        (-not [string]::Equals([System.IO.Path]::GetFileName($destinationLeaf), $destinationLeaf, [StringComparison]::Ordinal)) -or
+        ($destinationLeaf -eq '.') -or ($destinationLeaf -eq '..')) {
+        throw "Skill transaction journal metadata is invalid or targets another skill: $journalPath"
+    }
+    return $journal
+}
+
+function Read-SkillTransactionPhases {
+    param(
+        [Parameter(Mandatory = $true)][string]$TransactionRoot,
+        [Parameter(Mandatory = $true)][object]$Journal,
+        [AllowNull()][object]$PreparedTree
+    )
+
+    $phaseFiles = [ordered]@{
+        'incoming-prepared' = 'phase-20-incoming-prepared.json'
+        'live-displaced' = 'phase-30-live-displaced.json'
+        'live-committed' = 'phase-40-live-committed.json'
+    }
+    $knownNames = New-Object 'System.Collections.Generic.HashSet[string]' `
+        ([System.StringComparer]::Ordinal)
+    foreach ($name in $phaseFiles.Values) {
+        [void]$knownNames.Add($name)
+    }
+    foreach ($item in @(Get-ChildItem -LiteralPath $TransactionRoot -Force -ErrorAction Stop)) {
+        if ($item.Name.StartsWith('phase-', [StringComparison]::Ordinal) -and
+            (-not $knownNames.Contains($item.Name))) {
+            throw "Retained skill transaction has an unknown phase marker: $($item.FullName)"
+        }
+    }
+
+    $present = New-Object 'System.Collections.Generic.HashSet[string]' `
+        ([System.StringComparer]::Ordinal)
+    foreach ($phase in $phaseFiles.Keys) {
+        $path = Join-Path $TransactionRoot $phaseFiles[$phase]
+        if ($null -eq (Get-FileSystemItemIncludingBrokenLink -Path $path)) {
+            continue
+        }
+        if ($null -eq $PreparedTree) {
+            throw "Phase marker exists without a prepared tree manifest: $path"
+        }
+        $marker = Read-StrictTransactionJson -Path $path -MaximumBytes 16384 `
+            -Purpose "skill transaction phase '$phase'"
+        $requiredProperties = @(
+            'schema_version', 'transaction_id', 'phase',
+            'prepared_tree_sha256', 'recorded_at_utc'
+        )
+        $hasRequiredProperties = $true
+        foreach ($propertyName in $requiredProperties) {
+            if ($null -eq $marker.PSObject.Properties[$propertyName]) {
+                $hasRequiredProperties = $false
+                break
+            }
+        }
+        $timestampValue = $marker.recorded_at_utc
+        if ($timestampValue -is [DateTime]) {
+            $timestampIsValid = $timestampValue.Kind -eq [DateTimeKind]::Utc
+        } elseif ($timestampValue -is [DateTimeOffset]) {
+            $timestampIsValid = $true
+        } else {
+            $parsedTimestamp = [DateTimeOffset]::MinValue
+            $timestampIsValid = [DateTimeOffset]::TryParseExact(
+                [string]$timestampValue,
+                'o',
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind,
+                [ref]$parsedTimestamp
+            )
+        }
+        if ((-not $hasRequiredProperties) -or
+            ($marker.schema_version -ne 1) -or
+            (-not [string]::Equals([string]$marker.transaction_id, [string]$Journal.transaction_id, [StringComparison]::Ordinal)) -or
+            (-not [string]::Equals([string]$marker.phase, $phase, [StringComparison]::Ordinal)) -or
+            (-not [string]::Equals([string]$marker.prepared_tree_sha256, $PreparedTree.TreeSha256, [StringComparison]::Ordinal)) -or
+            (-not $timestampIsValid)) {
+            throw "Skill transaction phase marker metadata is invalid: $path"
+        }
+        [void]$present.Add($phase)
+    }
+
+    if (($present.Contains('live-displaced') -and
+            (-not $present.Contains('incoming-prepared'))) -or
+        ($present.Contains('live-committed') -and
+            (-not $present.Contains('incoming-prepared'))) -or
+        ([bool]$Journal.had_destination -and
+            $present.Contains('live-committed') -and
+            (-not $present.Contains('live-displaced'))) -or
+        ((-not [bool]$Journal.had_destination) -and
+            $present.Contains('live-displaced'))) {
+        throw "Skill transaction phase marker sequence is invalid: $TransactionRoot"
+    }
+    return ,$present
+}
+
+function Assert-OrdinaryTransactionDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Purpose
+    )
+
+    $item = Get-FileSystemItemIncludingBrokenLink -Path $Path
+    if ($null -eq $item) {
+        return $false
+    }
+    if ((Test-IsFileSystemLink -Item $item) -or (-not $item.PSIsContainer)) {
+        throw "Expected an ordinary directory for ${Purpose}: $Path"
+    }
+    Assert-NoReparsePointTree -Path $Path -Purpose $Purpose
+    return $true
+}
+
+function Recover-SkillTransactions {
+    param([Parameter(Mandatory = $true)][string]$Destination)
+
+    $destinationFull = Normalize-RootPath -Path $Destination
+    $skillRoot = Split-Path -Parent $destinationFull
+    $destinationLeaf = [System.IO.Path]::GetFileName($destinationFull)
+    if ([string]::IsNullOrEmpty($skillRoot) -or [string]::IsNullOrEmpty($destinationLeaf)) {
+        throw "Skill destination must have a parent directory and leaf name: $Destination"
+    }
+    if (-not (Test-Path -LiteralPath $skillRoot -PathType Container)) {
+        return
+    }
+
+    $container = Get-SkillTransactionContainerPath -SkillRoot $skillRoot
+    $containerItem = Get-FileSystemItemIncludingBrokenLink -Path $container
+    if ($null -eq $containerItem) {
+        return
+    }
+    if ((Test-IsFileSystemLink -Item $containerItem) -or (-not $containerItem.PSIsContainer)) {
+        throw "Skill transaction container is not an ordinary directory: $container"
+    }
+    Assert-NoReparsePointTree -Path $container -Purpose 'retained skill transaction recovery'
+
+    foreach ($transactionItem in @(Get-ChildItem -LiteralPath $container -Force -ErrorAction Stop | Sort-Object Name)) {
+        if ((Test-IsFileSystemLink -Item $transactionItem) -or (-not $transactionItem.PSIsContainer)) {
+            throw "Unexpected direct entry in skill transaction container '$container': $($transactionItem.FullName). No transaction was recovered."
+        }
+        $transactionRoot = $transactionItem.FullName
+        $entries = @(Get-ChildItem -LiteralPath $transactionRoot -Force -ErrorAction Stop)
+        $journalPath = Join-Path $transactionRoot 'transaction.json'
+        if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+            if ($entries.Count -eq 0) {
+                Remove-Item -LiteralPath $transactionRoot -Force -ErrorAction Stop
+                continue
+            }
+            throw "Retained skill transaction has data but no journal: $transactionRoot. Inspect it manually before retrying."
+        }
+
+        $journal = Read-SkillTransactionJournal -TransactionRoot $transactionRoot `
+            -ExpectedDestinationLeaf $destinationLeaf
+        $preparedTree = Read-PreparedTreeManifest -TransactionRoot $transactionRoot
+        $phases = Read-SkillTransactionPhases -TransactionRoot $transactionRoot `
+            -Journal $journal -PreparedTree $preparedTree
+        $incomingPath = Join-Path $transactionRoot 'incoming'
+        $previousPath = Join-Path $transactionRoot 'previous'
+        $hasLive = Assert-OrdinaryTransactionDirectory -Path $destinationFull `
+            -Purpose 'retained transaction live skill'
+        $hasIncoming = Assert-OrdinaryTransactionDirectory -Path $incomingPath `
+            -Purpose 'retained transaction incoming skill'
+        $hasPrevious = Assert-OrdinaryTransactionDirectory -Path $previousPath `
+            -Purpose 'retained transaction previous skill'
+        $verifiedCommittedLive = $false
+
+        if ($hasPrevious) {
+            if (-not [bool]$journal.had_destination) {
+                throw "Retained transaction '$transactionRoot' contains unexpected previous data. Inspect it manually before retrying."
+            }
+            if (($null -eq $preparedTree) -or
+                (-not $phases.Contains('incoming-prepared'))) {
+                throw "Retained transaction '$transactionRoot' moved previous data without a valid prepared-tree manifest and incoming-prepared phase. Recovery stopped without changing live or previous data."
+            }
+            if (-not $hasLive) {
+                Move-Item -LiteralPath $previousPath -Destination $destinationFull -ErrorAction Stop
+                $hasLive = $true
+                $hasPrevious = $false
+                Write-Warning "Recovered the previous skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+            } elseif ($hasIncoming) {
+                throw "Retained transaction '$transactionRoot' has live, previous, and incoming skill directories. Recovery is ambiguous; inspect these paths manually before retrying."
+            } else {
+                Assert-PreparedTreeMatches -Expected $preparedTree `
+                    -ActualRoot $destinationFull -TransactionRoot $transactionRoot
+                $verifiedCommittedLive = $true
+                Remove-Item -LiteralPath $previousPath -Recurse -Force -ErrorAction Stop
+                $hasPrevious = $false
+                Write-Warning "Finalized the committed skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+            }
+        }
+
+        if ((-not $hasLive) -and [bool]$journal.had_destination) {
+            throw "Retained transaction '$transactionRoot' records a previous skill, but both live and previous directories are missing. Recovery stopped to avoid data loss."
+        }
+        $shouldVerifyCommittedLive = $phases.Contains('live-committed') -or
+            ((-not [bool]$journal.had_destination) -and
+                $phases.Contains('incoming-prepared'))
+        if ((-not $verifiedCommittedLive) -and $hasLive -and (-not $hasIncoming) -and
+            $shouldVerifyCommittedLive) {
+            Assert-PreparedTreeMatches -Expected $preparedTree `
+                -ActualRoot $destinationFull -TransactionRoot $transactionRoot
+        }
+
+        Assert-NoReparsePointTree -Path $transactionRoot -Purpose 'recovered skill transaction cleanup'
+        Remove-Item -LiteralPath $transactionRoot -Recurse -Force -ErrorAction Stop
+    }
+
+    Remove-EmptySkillTransactionContainer -Path $container
+}
+
+function New-SkillTransaction {
+    param(
+        [Parameter(Mandatory = $true)][string]$SkillRoot,
+        [Parameter(Mandatory = $true)][string]$DestinationLeaf,
+        [Parameter(Mandatory = $true)][bool]$HadDestination
+    )
+
+    $container = Get-SkillTransactionContainerPath -SkillRoot $SkillRoot
+    $containerItem = Get-FileSystemItemIncludingBrokenLink -Path $container
+    if ($null -eq $containerItem) {
+        New-Item -ItemType Directory -Path $container -ErrorAction Stop | Out-Null
+        Set-PrivateDirectoryMode -Path $container
+    } elseif ((Test-IsFileSystemLink -Item $containerItem) -or (-not $containerItem.PSIsContainer)) {
+        throw "Skill transaction container is not an ordinary directory: $container"
+    }
+    Assert-NoReparsePointTree -Path $container -Purpose 'skill transaction creation'
+
+    for ($attempt = 0; $attempt -lt 16; $attempt++) {
+        $transactionId = 'txn-' + [guid]::NewGuid().ToString('N')
+        $transactionRoot = Join-Path $container $transactionId
+        try {
+            New-Item -ItemType Directory -Path $transactionRoot -ErrorAction Stop | Out-Null
+        } catch {
+            if ($null -ne (Get-FileSystemItemIncludingBrokenLink -Path $transactionRoot)) {
+                continue
+            }
+            throw "Could not create skill transaction directory '$transactionRoot'. $($_.Exception.Message)"
+        }
+
+        try {
+            Set-PrivateDirectoryMode -Path $transactionRoot
+            $journal = [ordered]@{
+                schema_version = 1
+                transaction_id = $transactionId
+                destination_leaf = $DestinationLeaf
+                had_destination = $HadDestination
+                created_at_utc = [DateTime]::UtcNow.ToString('o')
+            }
+            $journalText = ($journal | ConvertTo-Json).Replace("`r`n", "`n") + "`n"
+            Write-NewUtf8NoBomFile -Path (Join-Path $transactionRoot 'transaction.json') `
+                -Content $journalText
+            return [pscustomobject]@{
+                Id = $transactionId
+                Container = $container
+                Root = $transactionRoot
+                Incoming = Join-Path $transactionRoot 'incoming'
+                Previous = Join-Path $transactionRoot 'previous'
+            }
+        } catch {
+            $transactionError = $_
+            try {
+                if ($null -ne (Get-FileSystemItemIncludingBrokenLink -Path $transactionRoot)) {
+                    Assert-NoReparsePointTree -Path $transactionRoot -Purpose 'failed skill transaction creation cleanup'
+                    Remove-Item -LiteralPath $transactionRoot -Recurse -Force -ErrorAction Stop
+                }
+                Remove-EmptySkillTransactionContainer -Path $container
+            } catch {
+                throw "Could not initialize skill transaction '$transactionRoot' ('$($transactionError.Exception.Message)') and could not clean it up ('$($_.Exception.Message)'). Inspect the retained transaction before retrying."
+            }
+            throw "Could not initialize skill transaction '$transactionRoot'. $($transactionError.Exception.Message)"
+        }
+    }
+
+    throw "Could not reserve a unique skill transaction below '$container' after 16 attempts."
+}
+
+function Add-SkillTransactionPhase {
+    param(
+        [Parameter(Mandatory = $true)][string]$TransactionRoot,
+        [Parameter(Mandatory = $true)][string]$TransactionId,
+        [Parameter(Mandatory = $true)][string]$PreparedTreeSha256,
+        [ValidateSet('incoming-prepared', 'live-displaced', 'live-committed')]
+        [Parameter(Mandatory = $true)][string]$Phase
+    )
+
+    $phaseOrder = @{
+        'incoming-prepared' = '20'
+        'live-displaced' = '30'
+        'live-committed' = '40'
+    }
+    if (($TransactionId -notmatch '^txn-[0-9a-f]{32}$') -or
+        ($PreparedTreeSha256 -notmatch '^[0-9a-f]{64}$')) {
+        throw 'Cannot write a transaction phase marker with invalid identity metadata.'
+    }
+    $document = [ordered]@{
+        schema_version = 1
+        transaction_id = $TransactionId
+        phase = $Phase
+        prepared_tree_sha256 = $PreparedTreeSha256
+        recorded_at_utc = [DateTime]::UtcNow.ToString('o')
+    }
+    $path = Join-Path $TransactionRoot ("phase-$($phaseOrder[$Phase])-$Phase.json")
+    $text = ($document | ConvertTo-Json).Replace("`r`n", "`n") + "`n"
+    Write-NewUtf8NoBomFile -Path $path -Content $text
+}
+
+function Remove-SkillTransaction {
+    param([Parameter(Mandatory = $true)][object]$Transaction)
+
+    if ($null -ne (Get-FileSystemItemIncludingBrokenLink -Path $Transaction.Root)) {
+        Assert-NoReparsePointTree -Path $Transaction.Root -Purpose 'skill transaction cleanup'
+        Remove-Item -LiteralPath $Transaction.Root -Recurse -Force -ErrorAction Stop
+    }
+    Remove-EmptySkillTransactionContainer -Path $Transaction.Container
+}
+
 function Install-StagedSkill {
     param(
         [Parameter(Mandatory = $true)][string]$StageDir,
         [Parameter(Mandatory = $true)][string]$Destination
     )
 
-    $parent = Split-Path -Parent $Destination
+    $stageFull = Normalize-RootPath -Path $StageDir
+    $destinationFull = Normalize-RootPath -Path $Destination
+    $parent = Split-Path -Parent $destinationFull
+    $destinationLeaf = [System.IO.Path]::GetFileName($destinationFull)
+    if ([string]::IsNullOrEmpty($parent) -or [string]::IsNullOrEmpty($destinationLeaf)) {
+        throw "Skill destination must have a parent directory and leaf name: $Destination"
+    }
+    if (-not (Test-Path -LiteralPath $stageFull -PathType Container)) {
+        throw "Staged skill directory is missing: $stageFull"
+    }
+    Assert-NoReparsePointTree -Path $stageFull -Purpose 'staged skill installation source'
+
     if (-not (Test-Path -LiteralPath $parent)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
-    if (Test-Path -LiteralPath $Destination) {
-        Remove-Item -LiteralPath $Destination -Recurse -Force
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        throw "Skill destination parent is not a directory: $parent"
     }
-    Copy-Item -LiteralPath $StageDir -Destination $Destination -Recurse -Force
+    Assert-NoExistingReparsePoint -Path $parent -Purpose 'skill transaction swap'
+    # Recheck at the swap boundary. The outer preflight recovers before backup;
+    # this second pass catches out-of-band changes that do not honor our Mutex.
+    Recover-SkillTransactions -Destination $destinationFull
+
+    $destinationItem = Get-FileSystemItemIncludingBrokenLink -Path $destinationFull
+    $hadDestination = $null -ne $destinationItem
+    if ($hadDestination) {
+        if (-not $destinationItem.PSIsContainer) {
+            throw "Existing skill destination is not a directory: $destinationFull"
+        }
+        Assert-NoReparsePointTree -Path $destinationFull -Purpose 'existing skill displacement'
+    }
+
+    $transaction = New-SkillTransaction -SkillRoot $parent `
+        -DestinationLeaf $destinationLeaf -HadDestination $hadDestination
+    $incomingPath = $transaction.Incoming
+    $previousPath = $transaction.Previous
+    $mutationState = 'unchanged'
+    $operationSucceeded = $false
+    $failureMessage = $null
+    try {
+        New-Item -ItemType Directory -Path $incomingPath -ErrorAction Stop | Out-Null
+        Set-PrivateDirectoryMode -Path $incomingPath
+        try {
+            foreach ($child in @(Get-ChildItem -LiteralPath $stageFull -Force -ErrorAction Stop)) {
+                Copy-Item -LiteralPath $child.FullName -Destination $incomingPath `
+                    -Recurse -Force -ErrorAction Stop
+            }
+            Assert-DirectoryCopyMatches -Source $stageFull -Copy $incomingPath
+            $preparedTree = Write-PreparedTreeManifest `
+                -TransactionRoot $transaction.Root -IncomingRoot $incomingPath
+            Add-SkillTransactionPhase -TransactionRoot $transaction.Root `
+                -TransactionId $transaction.Id `
+                -PreparedTreeSha256 $preparedTree.TreeSha256 -Phase 'incoming-prepared'
+        } catch {
+            throw "Could not prepare a complete incoming skill copy at '$incomingPath'. The live destination was not changed. $($_.Exception.Message)"
+        }
+
+        # Recheck the transaction boundary immediately before moving live data.
+        Assert-NoExistingReparsePoint -Path $parent -Purpose 'skill transaction commit'
+        Assert-NoReparsePointTree -Path $transaction.Root -Purpose 'incoming skill transaction commit'
+        $currentDestination = Get-FileSystemItemIncludingBrokenLink -Path $destinationFull
+        if ($hadDestination) {
+            if (($null -eq $currentDestination) -or (-not $currentDestination.PSIsContainer)) {
+                throw "Existing skill destination changed before transaction commit: $destinationFull"
+            }
+            Assert-NoReparsePointTree -Path $destinationFull -Purpose 'existing skill transaction commit'
+            Move-Item -LiteralPath $destinationFull -Destination $previousPath -ErrorAction Stop
+            $mutationState = 'displaced'
+            Add-SkillTransactionPhase -TransactionRoot $transaction.Root `
+                -TransactionId $transaction.Id `
+                -PreparedTreeSha256 $preparedTree.TreeSha256 -Phase 'live-displaced'
+        } elseif ($null -ne $currentDestination) {
+            throw "Skill destination appeared before transaction commit: $destinationFull"
+        }
+
+        Move-Item -LiteralPath $incomingPath -Destination $destinationFull -ErrorAction Stop
+        $mutationState = 'committed'
+        Add-SkillTransactionPhase -TransactionRoot $transaction.Root `
+            -TransactionId $transaction.Id `
+            -PreparedTreeSha256 $preparedTree.TreeSha256 -Phase 'live-committed'
+        $operationSucceeded = $true
+
+        if ($null -ne (Get-FileSystemItemIncludingBrokenLink -Path $previousPath)) {
+            try {
+                Assert-NoReparsePointTree -Path $previousPath -Purpose 'previous skill cleanup'
+                Remove-Item -LiteralPath $previousPath -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Warning "Installed '$destinationFull' but retained recovery transaction '$($transaction.Root)' because previous skill data could not be removed. A later installer run will retry recovery. $($_.Exception.Message)"
+                return [pscustomobject]@{ MutationState = $mutationState; Destination = $destinationFull }
+            }
+        }
+
+        try {
+            Remove-SkillTransaction -Transaction $transaction
+        } catch {
+            Write-Warning "Installed '$destinationFull' but could not remove completed transaction '$($transaction.Root)'. A later installer run will retry cleanup. $($_.Exception.Message)"
+        }
+    } catch {
+        $failureMessage = $_.Exception.Message
+    }
+
+    if (-not $operationSucceeded) {
+        try {
+            $liveItem = Get-FileSystemItemIncludingBrokenLink -Path $destinationFull
+            $previousItem = Get-FileSystemItemIncludingBrokenLink -Path $previousPath
+            $incomingItem = Get-FileSystemItemIncludingBrokenLink -Path $incomingPath
+
+            if (($mutationState -eq 'unchanged') -and
+                ($null -eq $liveItem) -and ($null -ne $previousItem)) {
+                $mutationState = 'displaced'
+            }
+
+            if ($mutationState -eq 'displaced') {
+                if (($null -eq $liveItem) -and ($null -ne $previousItem)) {
+                    Assert-OrdinaryTransactionDirectory -Path $previousPath `
+                        -Purpose 'failed transaction previous skill restoration' | Out-Null
+                    Move-Item -LiteralPath $previousPath -Destination $destinationFull -ErrorAction Stop
+                    $mutationState = 'restored-exact'
+                } else {
+                    $mutationState = 'indeterminate'
+                }
+            } elseif ($mutationState -eq 'committed') {
+                if ($null -ne $liveItem) {
+                    Assert-OrdinaryTransactionDirectory -Path $destinationFull `
+                        -Purpose 'failed committed skill restoration' | Out-Null
+                    if ($null -ne $incomingItem) {
+                        $mutationState = 'indeterminate'
+                    } else {
+                        Move-Item -LiteralPath $destinationFull -Destination $incomingPath -ErrorAction Stop
+                        if ($hadDestination) {
+                            if ($null -eq $previousItem) {
+                                $mutationState = 'indeterminate'
+                            } else {
+                                Move-Item -LiteralPath $previousPath -Destination $destinationFull -ErrorAction Stop
+                                $mutationState = 'restored-exact'
+                            }
+                        } else {
+                            $mutationState = 'restored-exact'
+                        }
+                    }
+                } else {
+                    $mutationState = 'indeterminate'
+                }
+            } elseif ($mutationState -eq 'unchanged') {
+                $expectedLive = $hadDestination
+                $actualLive = $null -ne $liveItem
+                if (($expectedLive -ne $actualLive) -or ($null -ne $previousItem)) {
+                    $mutationState = 'indeterminate'
+                }
+            }
+
+            if (($mutationState -eq 'unchanged') -or ($mutationState -eq 'restored-exact')) {
+                Remove-SkillTransaction -Transaction $transaction
+            }
+        } catch {
+            $mutationState = 'indeterminate'
+            $failureMessage += " Automatic exact restoration or transaction cleanup also failed: $($_.Exception.Message). Retained transaction: '$($transaction.Root)'."
+        }
+
+        if ($mutationState -eq 'restored-exact') {
+            if ($hadDestination) {
+                $failureMessage += " The previous skill was restored exactly at '$destinationFull'; automatic snapshot rollback will not replace it."
+            } else {
+                $failureMessage += " The original absent state was restored exactly at '$destinationFull'; automatic snapshot rollback will not rewrite it."
+            }
+        }
+
+        $failure = New-Object System.InvalidOperationException -ArgumentList $failureMessage
+        $failure.Data['AgentToolRoutingSkillMutationState'] = $mutationState
+        $failure.Data['AgentToolRoutingSkillDestination'] = $destinationFull
+        throw $failure
+    }
+
+    return [pscustomobject]@{ MutationState = $mutationState; Destination = $destinationFull }
 }
 
 function Remove-StagingDirectory {
@@ -1318,8 +2354,25 @@ $wantOnboarding = [bool]($AddOnboardingRules -or $AddGlobalRules -or $initialize
 $targetNames = if ($Target -eq 'all') { @('codex', 'claude', 'zcode') } else { @($Target) }
 $configs = @($targetNames | ForEach-Object { Get-AgentConfig -Agent $_ })
 $plans = New-Object System.Collections.Generic.List[object]
+$agentInstallLocks = @(Enter-AgentInstallLocks -Configs $configs)
+try {
+    # Reject source-target aliasing even in WhatIf mode. This check is read-only
+    # and runs under the same config-root lock as the remaining preflight.
+    foreach ($config in $configs) {
+        foreach ($targetPath in @($config.SkillDir, $config.GlobalFile, $config.IndexRequest)) {
+            if (Test-PathsOverlap -First $RepoRoot -Second $targetPath) {
+                throw "Refusing $($config.Name) target '$targetPath' because it overlaps source repository '$RepoRoot'. Choose an agent config root outside this checkout."
+            }
+        }
+    }
 
-# Complete every read-only validation before creating a snapshot or touching a target.
+    $operationDescription = "Install tool-routing architecture for $($targetNames -join ', ')"
+    if (-not $PSCmdlet.ShouldProcess(($configs.ConfigRoot -join ', '), $operationDescription)) {
+        return
+    }
+
+# Hold every config-root lock while recovering retained transactions, planning,
+# installing, and performing any automatic rollback.
 foreach ($config in $configs) {
     foreach ($targetPath in @($config.SkillDir, $config.GlobalFile, $config.RuntimeDependency, $config.IndexRequest)) {
         if (-not (Test-PathContained -Parent $config.ConfigRoot -Child $targetPath)) {
@@ -1327,6 +2380,7 @@ foreach ($config in $configs) {
         }
     }
     Assert-NoExistingReparsePoint -Path $config.ConfigRoot -Purpose "$($config.Name) config access"
+    Recover-SkillTransactions -Destination $config.SkillDir
     Assert-NoReparsePointTree -Path $config.SkillDir -Purpose "$($config.Name) skill installation"
     Assert-NoExistingReparsePoint -Path $config.IndexRequest -Purpose "$($config.Name) initial routing state"
     $existingIndexRequest = Get-ExistingInitialIndexRequest -Config $config
@@ -1425,11 +2479,6 @@ foreach ($candidate in $overlapCandidates) {
     }
 }
 
-$operationDescription = "Install tool-routing architecture for $($targetNames -join ', ')"
-if (-not $PSCmdlet.ShouldProcess(($configs.ConfigRoot -join ', '), $operationDescription)) {
-    return
-}
-
 if (-not (Test-Path -LiteralPath $backupParent)) {
     New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
 }
@@ -1478,6 +2527,32 @@ foreach ($plan in $plans) {
 
 $rollbackPath = Join-Path $snapshotRoot 'rollback.ps1'
 $rollbackHelper = @'
+function Test-AgentToolRoutingRollbackSelected {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [AllowEmptyCollection()][string[]]$OnlyPaths
+    )
+
+    if ($OnlyPaths.Count -eq 0) {
+        return $true
+    }
+    $comparison = if (([IO.Path]::DirectorySeparatorChar -eq [char]'\') -or
+        [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [Runtime.InteropServices.OSPlatform]::OSX
+        )) {
+        [StringComparison]::OrdinalIgnoreCase
+    } else {
+        [StringComparison]::Ordinal
+    }
+    $full = [IO.Path]::GetFullPath($Path)
+    foreach ($candidate in $OnlyPaths) {
+        if ([string]::Equals($full, [IO.Path]::GetFullPath($candidate), $comparison)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Restore-AgentToolRoutingPath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -1609,6 +2684,8 @@ function Remove-UnchangedAgentToolRoutingRequest {
 '@
 $rollbackHelperLines = @([regex]::Split($rollbackHelper.Trim(), '\r\n|\n|\r'))
 $rollbackLines = @(
+    '[CmdletBinding()]',
+    'param([string[]]$OnlyPath = @())',
     '$ErrorActionPreference = ''Stop''',
     '# Generated rollback for agent-tool-routing-skill installation.'
 ) + $rollbackHelperLines + @('') + $rollbackPreflightCommands.ToArray() + @('') +
@@ -1616,13 +2693,29 @@ $rollbackLines = @(
 Write-Utf8BomFileAtomic -Path $rollbackPath -Content ($rollbackLines -join "`r`n")
 
 $results = New-Object System.Collections.Generic.List[object]
-$modificationStarted = $false
+$automaticRollbackPaths = New-Object System.Collections.Generic.List[string]
 $createdIndexRequests = New-Object System.Collections.Generic.List[object]
 try {
     foreach ($plan in $plans) {
-        $modificationStarted = $true
-        Install-StagedSkill -StageDir $plan.StageDir -Destination $plan.Config.SkillDir
+        try {
+            $skillInstallResult = Install-StagedSkill -StageDir $plan.StageDir `
+                -Destination $plan.Config.SkillDir
+            $automaticRollbackPaths.Add($plan.Config.SkillDir)
+        } catch {
+            $skillInstallError = $_
+            $mutationState = [string]$skillInstallError.Exception.Data[
+                'AgentToolRoutingSkillMutationState'
+            ]
+            if ((-not [string]::IsNullOrEmpty($mutationState)) -and
+                ($mutationState -ne 'unchanged') -and
+                ($mutationState -ne 'restored-exact')) {
+                $automaticRollbackPaths.Add($plan.Config.SkillDir)
+            }
+            throw
+        }
         if ($plan.Global.Changed) {
+            # A failing atomic write can be ambiguous, so select this path before writing.
+            $automaticRollbackPaths.Add($plan.Config.GlobalFile)
             Write-TextFileAtomic -Path $plan.Config.GlobalFile -Content $plan.Global.UpdatedText `
                 -Encoding $plan.Global.FileInfo.Encoding -EmitBom $plan.Global.FileInfo.EmitBom
         }
@@ -1669,9 +2762,9 @@ try {
             Write-Warning "Could not clean initial routing request '$($createdRequest.Path)' before core rollback: $($_.Exception.Message)"
         }
     }
-    if ($modificationStarted) {
+    if ($automaticRollbackPaths.Count -gt 0) {
         try {
-            & $rollbackPath | Out-Null
+            & $rollbackPath -OnlyPath $automaticRollbackPaths.ToArray() | Out-Null
             Write-Warning "Installation failed and target changes were rolled back. Snapshot: $snapshotRoot"
         } catch {
             throw "Installation failed ('$($installError.Exception.Message)') and automatic rollback also failed ('$($_.Exception.Message)'). Run '$rollbackPath' after resolving the rollback error."
@@ -1690,6 +2783,9 @@ $results | Format-Table -AutoSize
 if ($initializeRoutingRequested) {
     foreach ($plan in $plans) {
         Write-Output "Initial routing request: $($plan.Config.IndexRequest)"
-        Write-Output "If an Agent invoked this installer, it should process the request before returning to ordinary work. Otherwise the target Agent will process it on its next fresh turn."
+        Write-Output "If an Agent invoked this installer, it should process the request before returning to ordinary work. Otherwise the target Agent will process it in its next fresh session."
     }
+}
+} finally {
+    Exit-AgentInstallLocks -Locks $agentInstallLocks
 }

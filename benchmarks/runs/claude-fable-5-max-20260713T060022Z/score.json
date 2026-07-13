@@ -1,0 +1,47 @@
+{
+  "abstained_ids": [
+    "r013",
+    "r014",
+    "r015",
+    "r018"
+  ],
+  "accuracy": 1.0,
+  "action_confusion": {
+    "abstain->abstain": 4,
+    "bypass->bypass": 3,
+    "route->route": 11
+  },
+  "benchmark": "route-accuracy",
+  "by_classification": {
+    "A": {
+      "accuracy": 1.0,
+      "cases": 11,
+      "exact_matches": 11
+    },
+    "B": {
+      "accuracy": 1.0,
+      "cases": 4,
+      "exact_matches": 4
+    },
+    "C": {
+      "accuracy": 1.0,
+      "cases": 3,
+      "exact_matches": 3
+    }
+  },
+  "cases": 18,
+  "claim": "Exact-match score for the supplied predictions; provenance and generalization depend on the separately preserved run artifacts.",
+  "correct_abstained_ids": [
+    "r013",
+    "r014",
+    "r015",
+    "r018"
+  ],
+  "coverage": 1.0,
+  "errors": [],
+  "exact_matches": 18,
+  "incorrect_abstained_ids": [],
+  "missing_ids": [],
+  "predictions": 18,
+  "schema_version": 2
+}

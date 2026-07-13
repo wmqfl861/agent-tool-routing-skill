@@ -1,32 +1,32 @@
 {
   "schema_version": 1,
   "repository": "wmqfl861/agent-tool-routing-skill",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "7ec25f93ab2c50449d1f66fb804f1597f7df2b996deba2e79a79d78cf2ee5934",
-      "size": 12477
+      "sha256": "cad11b507a09b5bb147dcc9e304f43581027e88ef096f448752c535b12c41460",
+      "size": 14451
     },
     {
       "path": "VERSION",
-      "sha256": "1f930dd1f133c1f97a94fe3acb8db34372cf4c01ffdb2b3ff4ca72f9494121e9",
+      "sha256": "71015c979ccb0fc8a0be7ca0ae83046ab045cdc2c8faa09fb2f0f7e440f9b4a6",
       "size": 6
     },
     {
       "path": "agents/openai.yaml",
-      "sha256": "081fbedbf0ac273fd88737bd603e5b5fc38f2a7b0aaa8d1792574fa38df9ae37",
-      "size": 259
+      "sha256": "678be1648b9728c79c71abcf68c39b3f02eeb82c6475b70616f62cbf21cb11cb",
+      "size": 298
     },
     {
       "path": "examples/AGENTS.md.snippet",
-      "sha256": "5c4f2640f28357ba61ded44a4ac304cbf9d16495f57eba7eafebddab9666a1f3",
-      "size": 3993
+      "sha256": "731003fecf0f42c135ab0171f18f1203efab95687dfeaa82e892843c2fca0cd0",
+      "size": 4378
     },
     {
       "path": "examples/CLAUDE.md.snippet",
-      "sha256": "5c4f2640f28357ba61ded44a4ac304cbf9d16495f57eba7eafebddab9666a1f3",
-      "size": 3993
+      "sha256": "731003fecf0f42c135ab0171f18f1203efab95687dfeaa82e892843c2fca0cd0",
+      "size": 4378
     },
     {
       "path": "examples/category-skill.example.md",
@@ -45,33 +45,38 @@
     },
     {
       "path": "references/authoring.md",
-      "sha256": "6ffd581c64c95290bddaeb6ec29cefef09582aef5bd0a9d86dedb7f0b807a301",
-      "size": 5198
+      "sha256": "9515b957d4b1634c5670ff2566e260f789d9856d402a0662a3b8d37b8ac6a26a",
+      "size": 5459
     },
     {
       "path": "references/initial-index.md",
-      "sha256": "32cb6b0633031f0598c434de573faf28a352292b4e7a8f636472a0d1cf29dc81",
-      "size": 12526
+      "sha256": "a0f9c44f617d48c71bb29e0356c31b0b9066ad2ccd2819ca8941572095a0b3a0",
+      "size": 14123
     },
     {
       "path": "references/lifecycle.md",
-      "sha256": "9f54515216109960f1d7e5c7b055fabb787c67b9c3123550de72f5ac35a8d708",
-      "size": 6376
+      "sha256": "3d55902a03cf520baf6d5d177d3d5d07c46a0c1bf6d0a8849e0a5ab7fa18a4fb",
+      "size": 7119
+    },
+    {
+      "path": "references/managed-inventory.md",
+      "sha256": "b30188ec67b5140e0f3f12a46f426720ebbf2396fcf5d185097a8aa61e778a95",
+      "size": 7526
     },
     {
       "path": "references/route-tests.md",
-      "sha256": "7c121788414164a437d84603e44388a3868e4d3b6a694539d880f17b50331f3b",
-      "size": 6306
+      "sha256": "78d4a078a91fdf112cf13c41a6fecc03b19e4a04d0c897bb06f0ca509a86fc7d",
+      "size": 6808
     },
     {
       "path": "references/runtime-adapters.md",
-      "sha256": "6ec75c19590bb5429e463c9bbcd641833943f9446ae1b27c5007f013842f3a7d",
-      "size": 4678
+      "sha256": "becdb252bb2d1286bf753078fbb63098cbe562869952975c8f6d5fc2e7771764",
+      "size": 5027
     },
     {
       "path": "scripts/install.ps1",
-      "sha256": "e183bb2666bc733fc3a023a6c463fcfc6f6051987402acf263c18f448d58450e",
-      "size": 69594
+      "sha256": "7e4eb0ec63702a5ea9b5dd68d6c2a74a7bf10d85beff7de33a391885200ebed7",
+      "size": 118002
     }
   ]
 }

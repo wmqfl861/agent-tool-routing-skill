@@ -2,9 +2,9 @@
 
 Claude Code installs this repository as `tool-routing-architecture`.
 
-## Install, Onboard, and Initialize Routing
+## Install, Onboard, and Queue Routing Initialization
 
-Choose the one command for your platform. It is pinned to `v0.2.0`, verifies
+Choose the one command for your platform. It is pinned to `v0.2.1`, verifies
 the bootstrap and every payload file before execution, and can run from any
 directory without Git.
 
@@ -14,38 +14,41 @@ supported Windows release that provides `curl.exe`.
 ### Windows
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1';$h='dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1';$h='bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target claude -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
 ### macOS
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.0/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'dbf60fc240741068788ea0e96136af53fd810d8c0e081ac378899e0ff95f64d6' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.1/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' 'bdd89a3d5100fc9041404e0b023dd65ab453d6ae6843c7aaaff50e708330aca0' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target claude -InitializeRouting)
 ```
 
-After the verified core install, `-InitializeRouting` transactionally records a
-durable one-shot request or preserves an existing resumable request. It does not
-launch another Claude Code process. A Claude Code session that invoked the
-installer must continue the pending job before ordinary work; after a direct
-terminal install, the next fresh Claude Code turn consumes it. A running
-session is not guaranteed to hot-reload new skills or global instructions or
-complete indexing in the installation turn. The Claude Code session processing
-the job emits phase progress.
+After the verified core install, `-InitializeRouting` transactionally queues a
+durable one-shot request or preserves an existing resumable request. The
+installer does not inventory capabilities, search or download Skills, author
+guides, build routes, emit indexing phase progress, or launch another Claude
+Code process. A Claude Code session that invoked the installer must continue
+the pending job before ordinary work; after a direct terminal install, the next
+fresh Claude Code session consumes it. A running session is not guaranteed to
+hot-reload new skills or global instructions or complete indexing in the
+installation session. Only the Claude Code session consuming the job emits
+phase progress.
 
-The job inventories capabilities registered with or discoverable by Claude
-Code, not every executable on `PATH`. It routes resolved A and B capabilities
-by intent and records C primitives as inventory-only. Missing A guides are
-checked first against local or bundled Skills, then against a pinned canonical
-official source staged outside auto-discovery and reviewed before activation. A
-minimal guide may be authored from sufficient reviewed official documentation.
-If evidence is insufficient, the job remains resumable and the generated
-runtime tree stays inactive.
+The consuming Agent inventories capabilities registered with or discoverable by
+Claude Code, not every executable on `PATH`. It routes resolved A and B
+capabilities through active intent routes. Every C capability remains in the
+managed inventory with an exclusion rationale and bypasses active intent
+routing. Missing A guides are checked first against local or bundled Skills,
+then against a pinned canonical official source staged outside auto-discovery
+and reviewed before activation. A minimal guide may be authored from sufficient
+reviewed official documentation. If evidence is insufficient, the job remains
+resumable and the generated runtime tree stays inactive.
 
 ## Configuration Root
 
@@ -121,12 +124,28 @@ repository, and keep the backup parent outside the Claude Code `skills` root.
 On Windows, repository, config, and backup paths must resolve to local drives;
 device-namespace, UNC, and network-backed paths are rejected. Nested
 symlinks, junctions, and other reparse entries in recursively
-copied source or existing skill trees are always rejected so backup and
-rollback can preserve the tree. `-AllowReparsePoints` applies only to an
-independently verified path or ancestor, not to entries inside a recursively
+copied source or existing skill trees are always rejected so copy and rollback
+never traverse outside the reviewed tree. `-AllowReparsePoints` applies only to
+an independently verified path or ancestor, not to entries inside a recursively
 copied tree.
 On Linux and macOS, symlink aliases are resolved for overlap comparisons and
 existing global-file modes are preserved through install and rollback.
+
+The installer holds one cross-process lock per Claude config root through
+recovery and automatic rollback. Skill replacement persists a journal and the
+verified prepared-tree digest before displacing the live directory; a later run
+restores, finalizes, or fails closed on an ambiguous or modified retained
+transaction.
+The hidden container remains on the `skills` filesystem for same-filesystem
+moves, has no direct `SKILL.md`, and must be excluded by any non-standard
+recursive Skill scanner.
+
+This protects the Skill-directory swap, not the entire multi-file install as a
+power-loss atomic transaction. Rerun the installer after a process or host
+interruption. Snapshot rollback restores ordinary contents but does not promise
+to preserve ACLs, extended attributes, hardlink relationships, or directory
+identity. A manually launched rollback script does not acquire the installer
+lock and must not run concurrently with installation.
 
 ## Recovery and Reinstallation
 

@@ -21,6 +21,9 @@ An explicitly authorized initial-index job follows
 inventory, public-source research, local guide work, and routing changes stated
 by that request. It does not authorize unrelated tool installation, plugin
 enablement, authentication, payment, provider changes, or external writes.
+`-InitializeRouting` makes the installer queue or preserve that record; only the
+Agent consuming it performs discovery, sourcing, authoring, route construction,
+and indexing phase reporting.
 
 ## Change Workflow
 
@@ -41,12 +44,19 @@ enablement, authentication, payment, provider changes, or external writes.
    connection as permission for data access or writes.
 6. Classify the capability using the core skill's complexity heuristic and
    mandatory risk gates.
-7. Update Layer 1 and Layer 2 as required. Update Layer 0 only for a genuinely
-   new user-intent category. Record why routing did not change when applicable.
+7. Update the managed inventory plus Layer 1 and Layer 2 as required. Update
+   Layer 0 only for a genuinely new user-intent category. Record why active
+   routing did not change when applicable.
 8. Validate all skill paths and run the tests in `route-tests.md`.
 9. Report classification, changed files/configs, health and route-test results,
    source pin, backup/rollback location, retained data or credentials, and any
    unverified behavior.
+
+Use the canonical path and schema in
+[managed-inventory.md](managed-inventory.md). Read its id, revision, and digest
+before planning, stop on concurrent drift, and publish the next inventory
+revision in the same recoverable change as routes and managed global sections.
+The operation is incomplete if those states diverge.
 
 ## Remote Skill Staging
 
@@ -107,10 +117,13 @@ and state how the user can resume remediation later.
 3. Remove all Layer 1 routes to the old capability. Delete or archive Layer 2
    only when no active route uses it. Update Layer 0 only if the intent category
    itself disappears.
-4. Search affected roots for names, command aliases, server IDs, skill paths,
+4. Retain a non-sensitive inventory tombstone with the stable capability id,
+   former classification, removal time, and reason; remove active route and
+   Layer 2 pointers from that record.
+5. Search affected roots for names, command aliases, server IDs, skill paths,
    environment variables, and config keys. Distinguish intentionally historical
    text from dangling active references.
-5. Run a negative route test proving the removed tool is no longer selected and
+6. Run a negative route test proving the removed tool is no longer selected and
    a replacement test when applicable.
-6. Keep rollback concrete and avoid restoring secrets into a different store or
+7. Keep rollback concrete and avoid restoring secrets into a different store or
    account context.

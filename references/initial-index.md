@@ -3,6 +3,11 @@
 Read this reference when an installation or current user request explicitly
 authorizes an initial inventory and routing build for one agent.
 
+An installer invoked with `-InitializeRouting` only queues or preserves the
+durable control request. It does not perform discovery, inventory, remote Skill
+search or download, guide authoring, route construction, or phase reporting.
+The Agent consuming the request performs the phases below.
+
 ## Contents
 
 - [Authorization And Job State](#authorization-and-job-state)
@@ -16,11 +21,13 @@ authorizes an initial inventory and routing build for one agent.
 ## Authorization And Job State
 
 Open the pending request at `tool-routing-state/initial-index.json` relative to
-the effective Agent configuration root. An authorized installer may create this
-request; do not
-replace it or create a competing request for the same agent and configuration
-root. If the current user directly authorizes initial indexing and no request
-exists, create the request before discovery.
+the effective Agent configuration root. An authorized installer may have queued
+this request; do not replace it or create a competing request for the same agent
+and configuration root. An Agent that invoked the installer consumes it before
+ordinary work. After a direct terminal install, consume it in the target
+Agent's next fresh session; do not assume same-session hot-reload. If the
+current user directly authorizes initial indexing and no request exists, create
+the request before discovery.
 
 Validate and retain its `request_id`, `target_agent`, `project_version`,
 `runtime_mode`, `scope`, `completed_phases`, and `unresolved_a_tools` fields.
@@ -35,6 +42,13 @@ and outside auto-discovered skill and plugin roots for detailed artifacts:
 |-- staging/
 `-- backup/
 ```
+
+The inventory in this job directory is a working copy. The only live inventory
+is `<agent-config-root>/tool-routing-state/inventory.json`; read and apply the
+schema, privacy, revision, and transaction rules in
+[managed-inventory.md](managed-inventory.md). If a live inventory already
+exists, capture its id, revision, and digest before discovery and stop on drift
+before commit.
 
 Before the first artifact write, resolve the configuration root and every
 existing job-path ancestor to canonical filesystem paths and prove the final job
@@ -104,9 +118,10 @@ MCP operation, or enable a plugin merely to enrich the inventory.
 
 ## Progress Phases
 
-Publish concise progress updates during the job and mirror them in
-`progress.json`. Use stable phase counts so terminal and conversational clients
-can display the same state:
+Only the Agent consuming the pending job publishes concise progress updates and
+mirrors them in `progress.json`. The installer reports installation and queue
+status, not these phases. Use stable phase counts so terminal and conversational
+clients can display the same state:
 
 1. Discover effective configuration and skill roots.
 2. Inventory enabled registered and discoverable capabilities.
@@ -187,10 +202,13 @@ Build routes by user intent, not transport or packaging type:
   it to an existing validated Layer 2 guide.
 - Put every B helper in an appropriate Layer 1 category with complete inline
   selection and safety guidance.
-- Keep every C capability in the inventory with its exclusion rationale; do not
-  add it to the active routing tree.
+- Keep every C capability in the managed inventory with its exclusion
+  rationale and let it bypass active intent routing.
 - Add or update Layer 0 entries for all meaningful categories represented by
   active A or B capabilities, without listing concrete tools there.
+
+This is complete inventory management; it does not require every capability
+class to generate an active route.
 
 Prefer one primary category per tool unless distinct user intents justify more.
 Detect duplicate routes, overlapping category ownership, circular fallbacks,
@@ -203,6 +221,12 @@ non-discoverable staging directory. Do not enter the applying phase while
 `unresolved_a_tools` is non-empty. Commit all affected routing paths as one
 recoverable change only after pre-activation checks pass; leave the previously
 active tree unchanged if validation or commit fails.
+
+Include the canonical managed inventory in that same recoverable change. The
+job inventory remains a working artifact; atomically publish the next live
+revision only with the matching route tree and managed global sections. Journal
+their expected old digests and intended new digests, and restore all three on a
+failed commit.
 
 Immediately before commit, repeat containment and link checks for every staged
 source and live destination, compare live files with their planned digests, and
@@ -226,13 +250,15 @@ Do not activate newly generated runtime routing until all of these are true:
 - every active capability has an evidence-backed A, B, or C record;
 - every A route resolves to a reviewed and validated Layer 2 guide;
 - every B route contains complete low-risk inline guidance;
-- every C exclusion remains inventory-only;
+- every C exclusion remains in managed inventory with its rationale and
+  bypasses active intent routing;
 - every Layer 0 and Layer 1 path resolves;
 - route, provenance, safety, and runtime-mode tests pass;
 - `unresolved_a_tools` is empty and rollback paths are concrete.
 
 Then write a completion record to the external job directory, report counts and
-limitations, and atomically remove the live
+limitations, verify that the canonical inventory revision and route digests are
+durable, and atomically remove the live
 `tool-routing-state/initial-index.json`
 request as the completion signal. Return to the user's normal conversation. If
 an A capability remains unresolved, set the request to `blocked` or
@@ -240,5 +266,6 @@ an A capability remains unresolved, set the request to `blocked` or
 missing, and return to normal conversation without calling that capability.
 
 On resume, revalidate effective roots, enabled state, source pins, staged
-artifacts, backups, and inventory drift. Repeat only phases invalidated by new
-evidence; do not redo verified remote work or overwrite newer user changes.
+artifacts, backups, canonical inventory id/revision/digest, and inventory drift.
+Repeat only phases invalidated by new evidence; do not redo verified remote work
+or overwrite newer user changes.

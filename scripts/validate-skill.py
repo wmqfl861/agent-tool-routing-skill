@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,16 @@ SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
 )
-TEXT_SUFFIXES = {".json", ".md", ".ps1", ".py", ".snippet", ".yaml", ".yml"}
+TEXT_SUFFIXES = {
+    ".json",
+    ".jsonl",
+    ".md",
+    ".ps1",
+    ".py",
+    ".snippet",
+    ".yaml",
+    ".yml",
+}
 REMOTE_REPOSITORY = "wmqfl861/agent-tool-routing-skill"
 REMOTE_FIXED_PAYLOAD = (
     "VERSION",
@@ -485,6 +495,230 @@ def validate_windows_powershell_sources(validation: Validation) -> None:
             )
 
 
+def validate_recorded_benchmark_run(validation: Validation) -> None:
+    run_id = "claude-fable-5-max-20260713T060022Z"
+    run_dir = ROOT / "benchmarks" / "runs" / run_id
+    paths = {
+        "prompt.txt": run_dir / "prompt.txt",
+        "raw-output.txt": run_dir / "raw-output.txt",
+        "predictions.jsonl": run_dir / "predictions.jsonl",
+        "invocation.json": run_dir / "invocation.json",
+        "score.json": run_dir / "score.json",
+    }
+    if not run_dir.is_dir():
+        validation.error(run_dir, "recorded benchmark run directory is missing")
+        return
+    actual_names = {path.name for path in run_dir.iterdir() if path.is_file()}
+    if actual_names != set(paths):
+        validation.error(
+            run_dir,
+            "recorded benchmark run must contain exactly the five required artifacts",
+        )
+    if any(not path.is_file() for path in paths.values()):
+        for path in paths.values():
+            if not path.is_file():
+                validation.error(path, "required recorded-run artifact is missing")
+        return
+
+    invocation_text = read_utf8(paths["invocation.json"], validation)
+    score_text = read_utf8(paths["score.json"], validation)
+    if invocation_text is None or score_text is None:
+        return
+    invocation_hash = sha256_bytes(paths["invocation.json"].read_bytes())
+    expected_invocation_hash = (
+        "eec6beffbd09e05949615a9f9ca9e064ef78cda9dc57f3803c39f1a9ff99ba5b"
+    )
+    protocol_text = read_utf8(ROOT / "benchmarks" / "runs" / "README.md", validation)
+    if invocation_hash != expected_invocation_hash or (
+        protocol_text is not None and expected_invocation_hash not in protocol_text
+    ):
+        validation.error(
+            paths["invocation.json"],
+            "invocation manifest SHA-256 is stale or missing from the run protocol",
+        )
+    try:
+        invocation = json.loads(invocation_text)
+    except json.JSONDecodeError as exc:
+        validation.error(paths["invocation.json"], f"invalid invocation JSON: {exc}")
+        return
+    try:
+        score = json.loads(score_text)
+    except json.JSONDecodeError as exc:
+        validation.error(paths["score.json"], f"invalid score JSON: {exc}")
+        return
+    if not isinstance(invocation, dict) or not isinstance(score, dict):
+        validation.error(run_dir, "invocation and score artifacts must be JSON objects")
+        return
+
+    input_paths = {
+        "cases": ROOT / "benchmarks" / "route-cases.jsonl",
+        "catalog": ROOT / "benchmarks" / "reference-route-catalog.json",
+        "prompt.txt": paths["prompt.txt"],
+        "raw-output.txt": paths["raw-output.txt"],
+        "predictions.jsonl": paths["predictions.jsonl"],
+        "score.json": paths["score.json"],
+    }
+    recorded_hashes = invocation.get("sha256")
+    if not isinstance(recorded_hashes, dict):
+        validation.error(paths["invocation.json"], "sha256 must be an object")
+    else:
+        for name, path in input_paths.items():
+            actual_hash = sha256_bytes(path.read_bytes())
+            if recorded_hashes.get(name) != actual_hash:
+                validation.error(
+                    paths["invocation.json"], f"stale or invalid SHA-256 for {name}"
+                )
+    if paths["raw-output.txt"].read_bytes() != paths["predictions.jsonl"].read_bytes():
+        validation.error(
+            paths["predictions.jsonl"],
+            "recorded predictions must be byte-identical to the valid raw JSONL output",
+        )
+
+    expected_argv = [
+        "pwsh",
+        "-NoProfile",
+        "-File",
+        "D:\\npm-global\\claude.ps1",
+        "-p",
+        "--model",
+        "claude-fable-5",
+        "--effort",
+        "max",
+        "--permission-mode",
+        "plan",
+        "--safe-mode",
+        "--tools",
+        "",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--output-format",
+        "text",
+    ]
+    runner = invocation.get("runner")
+    process = invocation.get("invocation")
+    environment = invocation.get("environment")
+    extraction = invocation.get("extraction")
+    if not isinstance(runner, dict) or any(
+        runner.get(key) != value
+        for key, value in (
+            ("requested_model_identifier", "claude-fable-5"),
+            ("reasoning_or_effort", "max"),
+            ("cli_version", "2.1.199"),
+            ("permission_mode", "plan"),
+            ("safe_mode", True),
+            ("slash_commands", False),
+            ("session_persistence", False),
+        )
+    ):
+        validation.error(paths["invocation.json"], "runner metadata is stale or incomplete")
+    elif "immutable model snapshot" not in runner.get("model_identifier_scope", ""):
+        validation.error(
+            paths["invocation.json"],
+            "runner must state the limit of the requested model identifier",
+        )
+    if not isinstance(process, dict) or process.get("argv") != expected_argv:
+        validation.error(paths["invocation.json"], "exact isolated CLI argv is stale")
+    elif process.get("exit_code") != 0 or process.get("stderr_utf8_bytes") != 0:
+        validation.error(paths["invocation.json"], "run must record exit 0 and empty stderr")
+    if not isinstance(environment, dict) or "tool access was disabled" not in str(
+        environment.get("repository_access", "")
+    ):
+        validation.error(paths["invocation.json"], "repository isolation evidence is missing")
+    elif any(
+        environment.get(key) != value
+        for key, value in (
+            (
+                "os",
+                "Microsoft Windows Server 2019 Datacenter 10.0.17763 "
+                "(OS build 17763.8880)",
+            ),
+            ("architecture", "x64"),
+            ("locale", "en-US"),
+            ("ui_locale", "en-US"),
+        )
+    ) or "generated route catalog and answer-free opaque cases" not in str(
+        environment.get("repository_access", "")
+    ):
+        validation.error(paths["invocation.json"], "recorded run environment is stale")
+    if not isinstance(extraction, dict) or (
+        extraction.get("modified_values") is not False
+        or extraction.get("predictions_identical_to_raw_output") is not True
+    ):
+        validation.error(paths["invocation.json"], "prediction extraction contract is stale")
+
+    expected_summary = {
+        "cases": 18,
+        "predictions": 18,
+        "exact_matches": 18,
+        "accuracy": 1.0,
+        "coverage": 1.0,
+        "missing_ids": [],
+        "incorrect_abstained_ids": [],
+        "errors": [],
+    }
+    for key, value in expected_summary.items():
+        if score.get(key) != value:
+            validation.error(paths["score.json"], f"recorded score field {key} is stale")
+
+    benchmark_script = ROOT / "scripts" / "benchmark-routing.py"
+    commands = (
+        (
+            "prompt",
+            [
+                sys.executable,
+                str(benchmark_script),
+                "build-prompt",
+                "--cases",
+                str(input_paths["cases"]),
+                "--catalog",
+                str(input_paths["catalog"]),
+            ],
+            paths["prompt.txt"].read_text(encoding="utf-8"),
+        ),
+        (
+            "score",
+            [
+                sys.executable,
+                str(benchmark_script),
+                "score",
+                "--cases",
+                str(input_paths["cases"]),
+                "--predictions",
+                str(paths["predictions.jsonl"]),
+            ],
+            score,
+        ),
+    )
+    for label, command, expected in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            validation.error(run_dir, f"cannot replay recorded {label}: {exc}")
+            continue
+        if completed.returncode != 0:
+            validation.error(
+                run_dir,
+                f"recorded {label} replay failed: {completed.stderr.strip()}",
+            )
+            continue
+        actual: Any = completed.stdout
+        if label == "score":
+            try:
+                actual = json.loads(completed.stdout)
+            except json.JSONDecodeError as exc:
+                validation.error(run_dir, f"score replay returned invalid JSON: {exc}")
+                continue
+        if actual != expected:
+            validation.error(run_dir, f"recorded {label} artifact does not replay exactly")
+
+
 def validate_repository_contract(validation: Validation) -> None:
     required = (
         ROOT / "README.md",
@@ -497,12 +731,21 @@ def validate_repository_contract(validation: Validation) -> None:
         ROOT / "scripts" / "install.ps1",
         ROOT / "scripts" / "install-remote.ps1",
         ROOT / "scripts" / "install-manifest.json",
+        ROOT / "scripts" / "benchmark-routing.py",
         ROOT / "scripts" / "update-install-manifest.py",
+        ROOT / "benchmarks" / "reference-topology.json",
+        ROOT / "benchmarks" / "reference-context-result.json",
+        ROOT / "benchmarks" / "reference-route-catalog.json",
+        ROOT / "benchmarks" / "route-cases.jsonl",
+        ROOT / "benchmarks" / "runs" / "README.md",
+        ROOT / "docs" / "context-benchmark.md",
         ROOT / "tests" / "install.Tests.ps1",
+        ROOT / "tests" / "test_benchmark_routing.py",
         ROOT / "examples" / "AGENTS.md.snippet",
         ROOT / "examples" / "CLAUDE.md.snippet",
         ROOT / "references" / "authoring.md",
         ROOT / "references" / "lifecycle.md",
+        ROOT / "references" / "managed-inventory.md",
         ROOT / "references" / "route-tests.md",
         ROOT / "references" / "runtime-adapters.md",
         ROOT / ".github" / "workflows" / "ci.yml",
@@ -510,6 +753,87 @@ def validate_repository_contract(validation: Validation) -> None:
     for path in required:
         if not path.is_file():
             validation.error(path, "required repository file is missing")
+
+    topology_path = ROOT / "benchmarks" / "reference-topology.json"
+    topology_text = read_utf8(topology_path, validation)
+    if topology_text is not None:
+        try:
+            topology = json.loads(topology_text)
+        except json.JSONDecodeError as exc:
+            validation.error(topology_path, f"invalid JSON topology: {exc}")
+        else:
+            if not isinstance(topology, dict) or topology.get("schema_version") != 2:
+                validation.error(topology_path, "must use benchmark schema_version 2")
+            if not isinstance(topology, dict) or topology.get("synthetic") is not True:
+                validation.error(topology_path, "must explicitly declare synthetic true")
+
+    context_result_path = ROOT / "benchmarks" / "reference-context-result.json"
+    context_result_text = read_utf8(context_result_path, validation)
+    if context_result_text is not None:
+        try:
+            context_result = json.loads(context_result_text)
+        except json.JSONDecodeError as exc:
+            validation.error(
+                context_result_path, f"invalid canonical context result: {exc}"
+            )
+        else:
+            if (
+                not isinstance(context_result, dict)
+                or context_result.get("schema_version") != 2
+                or context_result.get("benchmark") != "skill-context-load"
+            ):
+                validation.error(
+                    context_result_path,
+                    "must be a schema_version 2 skill-context-load artifact",
+                )
+
+    catalog_path = ROOT / "benchmarks" / "reference-route-catalog.json"
+    catalog_text = read_utf8(catalog_path, validation)
+    if catalog_text is not None:
+        try:
+            catalog = json.loads(catalog_text)
+        except json.JSONDecodeError as exc:
+            validation.error(catalog_path, f"invalid route catalog: {exc}")
+        else:
+            if not isinstance(catalog, dict) or catalog.get("schema_version") != 2:
+                validation.error(catalog_path, "must use benchmark schema_version 2")
+            if not isinstance(catalog, dict) or not isinstance(
+                catalog.get("decision_policy"), list
+            ):
+                validation.error(catalog_path, "must define a decision_policy array")
+
+    cases_path = ROOT / "benchmarks" / "route-cases.jsonl"
+    cases_text = read_utf8(cases_path, validation)
+    if cases_text is not None:
+        case_ids: list[str] = []
+        for line_number, line in enumerate(cases_text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                case = json.loads(line)
+            except json.JSONDecodeError as exc:
+                validation.error(cases_path, f"line {line_number} is invalid JSON: {exc}")
+                continue
+            if not isinstance(case, dict) or not isinstance(case.get("id"), str):
+                validation.error(cases_path, f"line {line_number} needs a string id")
+                continue
+            case_ids.append(case["id"])
+            if re.fullmatch(r"r[0-9]{3,}", case["id"]) is None:
+                validation.error(
+                    cases_path,
+                    f"line {line_number} id must be opaque and match r plus digits",
+                )
+            if case.get("expected_action") not in ("route", "bypass", "abstain"):
+                validation.error(
+                    cases_path,
+                    f"line {line_number} expected_action must be route, bypass, or abstain",
+                )
+        if len(case_ids) != len(set(case_ids)):
+            validation.error(cases_path, "route case ids must be unique")
+        if not case_ids:
+            validation.error(cases_path, "must contain at least one route case")
+
+    validate_recorded_benchmark_run(validation)
 
     version: str | None = None
     version_text = read_utf8(ROOT / "VERSION", validation)
@@ -634,7 +958,7 @@ def validate_repository_contract(validation: Validation) -> None:
             install_sections = find_markdown_sections(
                 text,
                 2,
-                "Install, Onboard, and Initialize Routing",
+                "Install, Onboard, and Queue Routing Initialization",
             )
             if len(install_sections) != 1:
                 validation.error(
@@ -697,6 +1021,18 @@ def validate_repository_contract(validation: Validation) -> None:
                 ROOT / "SKILL.md",
                 "quoted or backticked current-user tool names must remain explicit",
             )
+        for requirement, description in (
+            ("queue a durable `pending` job", "durable queued handoff"),
+            ("not to execute the index", "installer/indexer boundary"),
+            ("Keep every C capability in the managed inventory", "managed C inventory"),
+            ("bypass active intent routing", "C active-route bypass"),
+            ("managed-inventory.md", "canonical managed inventory contract"),
+        ):
+            if requirement not in skill_text:
+                validation.error(
+                    ROOT / "SKILL.md",
+                    f"missing v0.2.1 semantic contract: {description}",
+                )
 
     install_text = read_utf8(ROOT / "scripts" / "install.ps1", validation)
     if install_text is not None:
@@ -775,6 +1111,8 @@ def validate_repository_contract(validation: Validation) -> None:
             "macos-latest",
             "EXPECTED_TEST_OS",
             "actionlint",
+            "python -m unittest discover -s tests -p \"test_*.py\" -v",
+            "--verify benchmarks/reference-context-result.json",
         ):
             if requirement not in ci_text:
                 validation.error(
@@ -813,6 +1151,18 @@ def validate_repository_contract(validation: Validation) -> None:
                 "every Pester job must enforce EXPECTED_PESTER_TESTS",
             )
 
+    attributes_text = read_utf8(ROOT / ".gitattributes", validation)
+    if attributes_text is not None:
+        for requirement in (
+            "*.jsonl text eol=lf",
+            "benchmarks/runs/**/*.txt text eol=lf",
+        ):
+            if requirement not in attributes_text:
+                validation.error(
+                    ROOT / ".gitattributes",
+                    f"benchmark artifacts must be normalized with '{requirement}'",
+                )
+
     snippet_paths = (
         ROOT / "examples" / "AGENTS.md.snippet",
         ROOT / "examples" / "CLAUDE.md.snippet",
@@ -842,6 +1192,8 @@ def validate_repository_contract(validation: Validation) -> None:
             ("exact commit SHA", "remote Skill provenance pin"),
             ("[####------]", "portable phase progress"),
             ("Return to the user's normal conversation", "conversation return contract"),
+            ("managed inventory", "managed C inventory contract"),
+            ("bypass active intent routing", "C active-route bypass contract"),
         ):
             if requirement not in initial_index_text:
                 validation.error(

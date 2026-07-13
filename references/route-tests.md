@@ -88,19 +88,27 @@ Exercise initial indexing with fixtures containing enabled and disabled MCP
 servers, plugins, bundled skills, local skills, C primitives, unrelated `PATH`
 executables, and at least one unresolved A capability. Confirm:
 
+- the installer only queues or preserves the durable request and does not
+  discover capabilities, search or download Skills, author guides, build
+  routes, or emit indexing phase progress;
 - a durable `pending` job exists before discovery or network access;
+- an invoking Agent consumes the job before ordinary work, while a direct
+  terminal install waits for the next fresh target-Agent session without a
+  same-session hot-reload guarantee;
 - only registered or discoverable enabled capabilities in effective user and
   active-workspace scope enter the active inventory;
 - disabled plugins, inactive caches, unrelated workspaces, and arbitrary
   `PATH` commands do not become routes;
 - local and bundled skill matching occurs before official-source search;
-- progress advances through the documented phases without leaking sensitive
-  values;
+- only the Agent consuming the job advances the documented progress phases,
+  without leaking sensitive values;
 - official candidates are pinned, staged outside discovery, reviewed, and
   validated before activation;
 - documentation-based fallback uses adequate official evidence and never
   invents missing commands or risks;
-- every resolved A and B capability is routed and every C is inventory-only;
+- every resolved A and B capability enters active intent routing, while every C
+  remains in managed inventory with an exclusion rationale and bypasses active
+  intent routing;
 - any unresolved A leaves the job blocked and the generated runtime tree
   inactive;
 - a completed or blocked job returns control to normal conversation and can

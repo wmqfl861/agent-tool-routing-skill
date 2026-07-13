@@ -1,0 +1,84 @@
+{
+  "schema_version": 2,
+  "answer_bearing": true,
+  "run_id": "claude-fable-5-max-20260713T060022Z",
+  "recorded_at_utc": "2026-07-13T06:01:46.2861668Z",
+  "runner": {
+    "agent": "Claude Code",
+    "requested_model_identifier": "claude-fable-5",
+    "model_identifier_scope": "Exact CLI request value; the backend's immutable model snapshot was not independently observable.",
+    "reasoning_or_effort": "max",
+    "cli_version": "2.1.199",
+    "runtime": "Claude Code launched by PowerShell 7.6.3",
+    "permission_mode": "plan",
+    "safe_mode": true,
+    "tool_access": "Disabled with --tools followed by an empty argument.",
+    "slash_commands": false,
+    "session_persistence": false,
+    "output_format": "text",
+    "working_directory": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\agent-routing-blind-claude-fable-5-max-20260713T060022Z",
+    "working_directory_state": "Empty and outside the repository before and after the run."
+  },
+  "invocation": {
+    "argv": [
+      "pwsh",
+      "-NoProfile",
+      "-File",
+      "D:\\npm-global\\claude.ps1",
+      "-p",
+      "--model",
+      "claude-fable-5",
+      "--effort",
+      "max",
+      "--permission-mode",
+      "plan",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--disable-slash-commands",
+      "--no-session-persistence",
+      "--output-format",
+      "text"
+    ],
+    "stdin": "Exact prompt.txt UTF-8 bytes without BOM, written by StreamWriter.Write through redirected standard input and then closed.",
+    "stdout": "Captured asynchronously with ReadToEnd and written unchanged as UTF-8 without BOM to raw-output.txt.",
+    "stderr": "Captured asynchronously with ReadToEnd; exact value was an empty string.",
+    "stderr_utf8_bytes": 0,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "exit_code": 0,
+    "started_at_utc": "2026-07-13T06:01:08.0014149Z",
+    "finished_at_utc": "2026-07-13T06:01:46.2861668Z",
+    "duration_seconds": 38.2847519,
+    "executor": "System.Diagnostics.ProcessStartInfo from PowerShell 7.6.3"
+  },
+  "environment": {
+    "os": "Microsoft Windows Server 2019 Datacenter 10.0.17763 (OS build 17763.8880)",
+    "architecture": "x64",
+    "locale": "en-US",
+    "ui_locale": "en-US",
+    "text_encoding": "UTF-8 without BOM for preserved artifacts",
+    "credential_mechanism": "Existing Claude Code authentication; no secret was recorded.",
+    "repository_access": "No repository filesystem was present in the working directory and tool access was disabled. The prompt intentionally contained the generated route catalog and answer-free opaque cases, but not the answer-bearing source records or any other repository content.",
+    "discovered_skill_state": "Not independently enumerated; slash commands were disabled and the external working directory was empty."
+  },
+  "inputs": {
+    "cases_path": "benchmarks/route-cases.jsonl",
+    "catalog_path": "benchmarks/reference-route-catalog.json",
+    "prompt_artifact": "prompt.txt",
+    "answer_file_available_to_evaluator": false,
+    "catalog_embedded_in_prompt": true
+  },
+  "sha256": {
+    "cases": "897bdb9e5bde23089312c3376e43c57270a40795f997abce33cd7af6e66fba81",
+    "catalog": "ee24282719c28532441a48d12f2108737d91e92dc8afcad516e190ed62317224",
+    "prompt.txt": "94930f210dd5cafeb5caab4e905221c088b8dc9b616378c54f7700fe5659b9f6",
+    "raw-output.txt": "b2393c2a9bf8c9d6d6706bd4955d1f5d9fca74f8cdbd7a81ee0c3dd3fa1e7825",
+    "predictions.jsonl": "b2393c2a9bf8c9d6d6706bd4955d1f5d9fca74f8cdbd7a81ee0c3dd3fa1e7825",
+    "score.json": "8587d21059f96f0e40653e58ec0320e622f6e730d307976e6b26e3058c04839a"
+  },
+  "extraction": {
+    "method": "raw-output.txt was already valid JSONL and was copied byte-for-byte to predictions.jsonl.",
+    "modified_values": false,
+    "predictions_identical_to_raw_output": true
+  }
+}

@@ -1,4 +1,4 @@
 interface:
   display_name: "Tool Routing Architecture"
-  short_description: "Index, route, and onboard agent tools."
-  default_prompt: "Use $tool-routing-architecture to inventory registered tools, resolve missing A-class guides, and build validated routes."
+  short_description: "Manage durable tool indexing and intent routes."
+  default_prompt: "Use $tool-routing-architecture to consume an authorized index request, build validated A/B intent routes, and retain C exclusions in managed inventory."

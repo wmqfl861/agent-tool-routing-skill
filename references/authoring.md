@@ -82,12 +82,15 @@ such a tool because it has only one command.
 
 Use B only when the capability is narrow, read-only, low risk, and completely
 described in a few category lines. Use C only for primitives or defaults already
-governed elsewhere.
+governed elsewhere. During indexing, retain a managed C record and its exclusion
+rationale, but do not create an active intent route for it.
 
 For an initial index, keep a record for every enabled registered or discoverable
-capability. Route all A and B records, but keep C records inventory-only with an
-explicit exclusion rationale. Treat unknown or weakly evidenced classifications
-as unresolved A candidates until reviewed; do not omit them to make route
+capability. Route all A and B records. Keep C records in the managed inventory
+with an explicit exclusion rationale and let them bypass active intent routing.
+This is complete inventory management, not a requirement that every class
+generate a route. Treat unknown or weakly evidenced classifications as
+unresolved A candidates until reviewed; do not omit them to make route
 generation pass.
 
 Record provenance for every imported or authored A guide: canonical owner and
