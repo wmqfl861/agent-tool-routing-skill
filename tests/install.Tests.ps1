@@ -311,8 +311,10 @@ function Invoke-InstallerInFreshProcess {
             }
         }
     )
+    $childCommand = 'try { ' + ($commandParts -join ' ') +
+        ' } catch { [Console]::Error.WriteLine([string]$_.Exception.Message); exit 1 }'
     $encoded = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes(($commandParts -join ' '))
+        [Text.Encoding]::Unicode.GetBytes($childCommand)
     )
     $stdoutPath = Join-Path ([IO.Path]::GetTempPath()) `
         ('agent-routing-child-' + [guid]::NewGuid().ToString('N') + '.stdout')
