@@ -494,7 +494,8 @@ Describe 'scripts/install.ps1' {
         $global = [IO.File]::ReadAllText($layout.Global)
         Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
         Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
-        Assert-True ($global.Contains('`tool-use-architecture`'))
+        Assert-True ($global.Contains('This opt-in gate delegates only'))
+        Assert-True ($global.Contains('must not replace the current task'))
         Assert-False (Test-Path -LiteralPath (
             Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
         ))
@@ -1337,8 +1338,8 @@ Describe 'scripts/install.ps1' {
         $legacySnippet = [IO.File]::ReadAllText($snippetPath)
         $legacySnippet = $legacySnippet.Replace('`tool-routing-architecture`', '`tool-use-architecture`')
         $legacySnippet = $legacySnippet.Replace(
-            'This installation uses `auto-discovery`:',
-            "LEGACY_RUNTIME_SENTINEL`n`nThis installation uses `auto-discovery`:"
+            'This installation uses `auto-discovery`;',
+            "LEGACY_RUNTIME_SENTINEL`n`nThis installation uses `auto-discovery`;"
         )
         $legacyText = @(
             'USER_TEXT_BEFORE',
