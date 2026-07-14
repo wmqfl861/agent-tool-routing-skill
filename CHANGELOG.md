@@ -6,6 +6,60 @@ All notable user-visible changes are recorded here. The project follows
 此文件记录所有用户可见的重要变更。项目在 1.0 之前同样遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.3] - 2026-07-14
+
+### Fixed / 修复
+
+- Make `-Target` fail closed in both local and remote installers. Omitting it
+  no longer expands silently to every supported Agent; only explicit
+  `-Target all` authorizes a multi-Agent install.
+- Bind queued initial-index work to its recorded target Agent and configuration
+  root. Pending work is inert until the current user explicitly asks to
+  initialize or resume it, and it cannot inspect or mutate another Agent root.
+- Stop remote quick installs from adding global onboarding rules or queuing an
+  initial index by default. Both behaviors now require explicit switches.
+- Narrow architecture and Layer 0 discovery metadata so ordinary tool calls,
+  selected category/tool workflows, quoted content, and transitive references
+  cannot activate the architecture skill or replace the user's current task.
+- Keep direct capability lifecycle delegation behind the opt-in
+  `-AddOnboardingRules` gate. Skill-only installs require an explicit
+  architecture invocation for managed offboarding.
+- Reject non-object pending and recovery JSON before writes, and validate every
+  selected Agent's retained transaction and install plan before recovery mutates
+  any target.
+- Reject the legacy `-AddGlobalRules` switch before path resolution or writes;
+  onboarding and runtime rules now require their independent explicit switches.
+- Explicitly exclude individual tool lifecycle and tool-mediated data changes
+  from auto-discovery metadata, including when lifecycle verbs appear in task
+  data or retrieved content.
+- Add target-isolation, opt-in initialization, metadata-boundary, and static
+  anti-hijack contract coverage. These checks do not claim to simulate a host
+  model's Skill auto-selection behavior.
+- Refresh the synthetic context artifact after narrowing Layer 0 metadata:
+  eager metadata `11,916`, body `98,901`, total `110,817`; strict A `7,287`,
+  strict B `4,779`, auto A `2,783`, auto B `2,375`, and C bypass `0` bytes.
+- 本地和远程安装器现在都要求显式 `-Target`。缺少参数时会在任何写入前失败，
+  不再静默扩大到全部 Agent；只有显式 `-Target all` 才授权多 Agent 安装。
+- 首次索引请求绑定其记录的目标 Agent 和配置根目录。pending 任务默认静默，
+  只有当前用户明确要求初始化或恢复时才执行，并且不能检查或修改其他 Agent 根目录。
+- 远程快速安装不再默认写入全局 onboarding 规则或排队首次索引；两项行为都改为
+  显式开关。
+- 收紧架构 Skill 和 Layer 0 的发现 metadata，普通工具调用、已选定的分类/工具
+  工作流、引用内容和传递加载不能再激活架构 Skill 或替代用户当前任务。
+- 只有显式安装 `-AddOnboardingRules` 门禁后，才会委托直接的能力生命周期请求；
+  仅安装 Skill 时，受管下线必须显式调用架构 Skill。
+- pending 与恢复 JSON 的顶层不是对象时会在写入前拒绝；恢复修改任何目标前，
+  会先校验全部选定 Agent 的保留事务与安装计划。
+- 旧的 `-AddGlobalRules` 会在路径解析或写入前失败；onboarding 和 runtime 规则
+  必须分别使用各自的显式开关。
+- 自动发现 metadata 现在明确排除单个工具生命周期和工具处理的数据变更，即使任务
+  数据或检索内容中出现生命周期动词也不会激活架构 Skill。
+- 增加目标隔离、显式初始化、metadata 边界和静态 anti-hijack 契约测试；这些
+  检查不声称模拟宿主模型真实的 Skill 自动选择行为。
+- 收紧 Layer 0 metadata 后同步刷新合成上下文基准：eager metadata `11,916`、
+  body `98,901`、total `110,817`；strict A `7,287`、strict B `4,779`、
+  auto A `2,783`、auto B `2,375`、C bypass `0` bytes。
+
 ## [0.2.2] - 2026-07-13
 
 ### Changed / 变更
@@ -358,6 +412,7 @@ Initial versioned release. / 首个正式版本化发布。
 - Codex 安装时会把 `tool-routing-architecture` 兼容转换为
   `tool-use-architecture`，覆盖已安装元数据和 managed global rules。
 
+[0.2.3]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.3
 [0.2.2]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.2
 [0.2.1]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.1
 [0.2.0]: https://github.com/wmqfl861/agent-tool-routing-skill/releases/tag/v0.2.0

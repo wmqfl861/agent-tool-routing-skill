@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_PESTER_TESTS: 58
+  EXPECTED_PESTER_TESTS: 64
 
 jobs:
   repository-validation:

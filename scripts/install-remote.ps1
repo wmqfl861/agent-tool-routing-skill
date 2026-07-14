@@ -1,9 +1,11 @@
 [CmdletBinding()]
 param(
     [ValidateSet('all', 'codex', 'claude', 'zcode')]
-    [string]$Target = 'all',
+    [string]$Target,
 
     [switch]$SkipOnboardingRules,
+
+    [switch]$AddOnboardingRules,
 
     [switch]$AddRuntimeRules,
 
@@ -32,13 +34,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($InitializeRouting -and $SkipOnboardingRules) {
-    throw '-InitializeRouting requires onboarding rules; remove -SkipOnboardingRules.'
+if ([string]::IsNullOrWhiteSpace($Target)) {
+    throw "-Target is required. Choose one of: codex, claude, zcode, or all."
 }
-$ReleaseVersion = '0.2.2'
+if ($AddOnboardingRules -and $SkipOnboardingRules) {
+    throw '-AddOnboardingRules cannot be combined with -SkipOnboardingRules.'
+}
+$ReleaseVersion = '0.2.3'
 $Repository = 'wmqfl861/agent-tool-routing-skill'
 $ManifestRelativePath = 'scripts/install-manifest.json'
-$ManifestSha256 = '2e19059307f504feafc8dd9940a07cd3344ba679cf9fc86f2e7cbbbecf530c4b'
+$ManifestSha256 = '34b80ddadbd74dba74432356bdd9f8ecc8856d5f026e1d5f6089e0c15b87b7e4'
 $RequiredPayloadPaths = @(
     'VERSION',
     'SKILL.md',
@@ -401,7 +406,7 @@ try {
         Target = $Target
         UserProfile = $UserProfile
     }
-    if (-not $SkipOnboardingRules) {
+    if ($AddOnboardingRules) {
         $installerArguments.Add('AddOnboardingRules', $true)
     }
     if ($AddRuntimeRules) {

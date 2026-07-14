@@ -173,10 +173,12 @@ Every authorized add, update, disable, remove, replacement, or reclassification
 operation reads this canonical inventory before planning and updates it in the
 same recoverable change as routing and managed global instructions.
 
-A current-user request to remove, delete, or uninstall a named or unambiguously
-identified capability authorizes the complete managed offboarding transaction
-for that capability in the effective Agent scope. It does not need separate
-wording for Skill, inventory, route, or managed-global-rule cleanup. It does not
+After lifecycle activation by explicit architecture invocation or the opt-in
+onboarding gate, a current-user request to remove, delete, or uninstall a named
+or unambiguously identified capability authorizes the complete managed
+offboarding transaction for that capability in the effective Agent scope. It
+does not need separate wording for Skill, inventory, route, or
+managed-global-rule cleanup. It does not
 authorize deleting shared or user-modified artifacts, credentials, caches,
 browser profiles, user data, accounts, or other capabilities.
 

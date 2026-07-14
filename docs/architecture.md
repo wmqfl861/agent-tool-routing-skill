@@ -36,13 +36,14 @@ before discovery begins. The installer
 does not inventory capabilities, search for or download Skills, author guides,
 build routes, or launch another Agent process.
 
-An Agent that invokes installation must continue the request before ordinary
-work. A direct terminal installation leaves it for the target Agent's next
-fresh session. A running Agent is not guaranteed to hot-reload new skills or
-global rules, so installation does not guarantee same-session processing. Only
-the Agent that consumes the request emits phase progress and returns to
-ordinary conversation after recording a terminal or resumable state. The
-installer reports installation and queue status, not indexing phase progress.
+The request is inert until the current user explicitly asks the recorded target
+Agent to initialize or resume routing. It must not interrupt or replace an
+unrelated task. A running Agent is not guaranteed to hot-reload new skills, so
+use a fresh target-Agent session for the explicit resume. The request records
+the target Agent, canonical configuration root, and single-Agent mutation scope;
+the consumer must reject any mismatch and must not inspect or modify another
+Agent root. Only the Agent consuming the explicitly resumed request emits phase
+progress. The installer reports installation and queue status only.
 
 The effective discovery boundary is the target Agent, not the whole machine.
 Inventory capabilities that are enabled and registered with or discoverable by

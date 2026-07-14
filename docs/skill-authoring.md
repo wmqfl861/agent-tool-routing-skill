@@ -57,11 +57,16 @@ explicitly implement strict-progressive loading. Under auto-discovery, write
 Layer 1 and Layer 2 descriptions narrowly enough that they can match directly
 without competing with every other layer. `tool-index` resolves broad or
 ambiguous category selection; it is not a runtime-enforced mandatory gate.
+Keep the architecture skill itself limited to explicit routing-architecture
+design, audit, initialization, or maintenance requests. It must not compete
+with ordinary tool selection or an already selected category/tool workflow.
 
 For strict-progressive deployments, keep lower layers outside automatic skill
 discovery and load them through references or a documented runtime-specific
-mechanism. State that choice in deployment documentation and test that a Layer
-2 skill cannot trigger before its parent route.
+mechanism. Generate strict-progressive Layer 0 metadata at deployment time;
+never put its broad "all specialized routes" trigger into the default
+auto-discovery template. State that choice in deployment documentation and test
+that a Layer 2 skill cannot trigger before its parent route.
 
 ## Trust Rules
 

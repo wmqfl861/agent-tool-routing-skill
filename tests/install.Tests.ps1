@@ -181,6 +181,51 @@ function New-RemoteSourceFixture {
     return $source
 }
 
+function New-CurrentRemoteFixture {
+    param([string]$Name)
+
+    $source = New-RemoteSourceFixture -Name $Name
+    $manifestPath = Join-TestPath $source @('scripts', 'install-manifest.json')
+    $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+    $manifest.version = $projectVersion
+    foreach ($entry in @($manifest.files)) {
+        $payloadPath = Join-TestPath $source @(([string]$entry.path).Split('/'))
+        $entry.sha256 = (Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $entry.size = (Get-Item -LiteralPath $payloadPath -Force).Length
+    }
+    $manifestText = ($manifest | ConvertTo-Json -Depth 5).Replace("`r`n", "`n") + "`n"
+    [IO.File]::WriteAllText(
+        $manifestPath,
+        $manifestText,
+        (New-Object Text.UTF8Encoding $false)
+    )
+    $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $bootstrapText = [IO.File]::ReadAllText($remoteInstaller)
+    $hashAssignment = [regex]::Match(
+        $bootstrapText,
+        '(?m)^\$ManifestSha256 = ''[0-9a-f]{64}'''
+    )
+    Assert-True $hashAssignment.Success 'Remote bootstrap manifest hash assignment was not found.'
+    $bootstrapText = $bootstrapText.Replace(
+        $hashAssignment.Value,
+        ('$ManifestSha256 = ''' + $manifestHash + '''')
+    )
+    $versionAssignment = [regex]::Match(
+        $bootstrapText,
+        '(?m)^\$ReleaseVersion = ''[^'']+'''
+    )
+    Assert-True $versionAssignment.Success 'Remote bootstrap release version assignment was not found.'
+    $bootstrapText = $bootstrapText.Replace(
+        $versionAssignment.Value,
+        ('$ReleaseVersion = ''' + $projectVersion + '''')
+    )
+    return [pscustomobject]@{
+        SourceRoot = $source
+        Installer = [scriptblock]::Create($bootstrapText)
+    }
+}
+
 function Write-EncodedText {
     param(
         [string]$Path,
@@ -367,9 +412,16 @@ function Assert-PendingInitialIndexState {
     $statePath = Join-TestPath $ConfigRoot @('tool-routing-state', 'initial-index.json')
     Assert-True (Test-Path -LiteralPath $statePath -PathType Leaf)
     $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
-    Assert-Equal ([int]$state.schema_version) 1
+    Assert-True (($state.schema_version -is [int]) -or ($state.schema_version -is [long]))
+    Assert-True ($state.target_agent -is [string])
+    Assert-True ($state.target_config_root -is [string])
+    Assert-True ($state.mutation_scope -is [string])
+    Assert-Equal ([int]$state.schema_version) 2
     Assert-Equal ([string]$state.status) 'pending'
     Assert-Equal ([string]$state.target_agent) $TargetAgent
+    Assert-Equal ([IO.Path]::GetFullPath([string]$state.target_config_root)) `
+        ([IO.Path]::GetFullPath($ConfigRoot))
+    Assert-Equal ([string]$state.mutation_scope) 'target-agent-config-only'
     Assert-Equal ([string]$state.project_version) $projectVersion
     Assert-Equal ([string]$state.runtime_mode) 'auto-discovery'
     Assert-Equal ([string]$state.scope) 'registered-capabilities'
@@ -410,11 +462,31 @@ Describe 'scripts/install.ps1' {
         Assert-Equal $script:TestPlatformName $env:EXPECTED_TEST_OS
     }
 
-    It 'installs clean onboarding rules without requiring tool-index' {
+    It 'rejects a missing target before writing config or backup data' {
+        $layout = New-InstallLayout 'missing-target'
+        $threw = $false
+
+        try {
+            $null = & $installer -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('-Target is required'))
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
+    }
+
+    It 'installs Codex onboarding without resolving unrelated agent roots' {
         $layout = New-InstallLayout 'clean-onboarding'
+        $invalidUnrelatedRoot = "invalid$([char]0)root"
 
         $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
-            -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+            -CodexHome $layout.Config -ClaudeConfigDir $invalidUnrelatedRoot `
+            -ZcodeHome $invalidUnrelatedRoot -BackupRoot $layout.Backup -AddOnboardingRules
 
         Assert-True (Test-Path -LiteralPath $layout.Skill)
         Assert-True (Test-Path -LiteralPath $layout.Global)
@@ -652,6 +724,51 @@ Describe 'scripts/install.ps1' {
         Assert-True (Test-Path -LiteralPath (Join-Path $transactionRoot 'transaction.json'))
     }
 
+    It 'rejects top-level JSON arrays in retained transaction metadata' {
+        $layout = New-InstallLayout 'transaction-array-root'
+        New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $layout.Skill 'old-sentinel.txt'), 'old-skill')
+        Mock Remove-Item { throw 'simulated previous cleanup interruption' } -ParameterFilter {
+            (-not [string]::IsNullOrEmpty([string]$LiteralPath)) -and
+                ([IO.Path]::GetFileName([string]$LiteralPath) -eq 'previous')
+        }
+
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot (Join-Path $layout.Root 'first-backup')
+        $container = Get-SkillTransactionContainer -SkillPath $layout.Skill
+        $transactionRoot = @(Get-ChildItem -LiteralPath $container -Directory)[0].FullName
+        $previous = Join-Path $transactionRoot 'previous'
+        $journalPath = Join-Path $transactionRoot 'transaction.json'
+        $journalText = [IO.File]::ReadAllText($journalPath).Trim()
+        [IO.File]::WriteAllText(
+            $journalPath,
+            "[`n$journalText`n]`n",
+            (New-Object Text.UTF8Encoding $false)
+        )
+        $journalBefore = [Convert]::ToBase64String([IO.File]::ReadAllBytes($journalPath))
+        $liveSkillPath = Join-Path $layout.Skill 'SKILL.md'
+        $liveBefore = [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveSkillPath))
+        $recoveryBackup = Join-Path $layout.Root 'recovery-backup'
+
+        $recovery = Invoke-InstallerInFreshProcess -Arguments @(
+            '-Target', 'codex',
+            '-UserProfile', $layout.Profile,
+            '-AllowCustomProfile',
+            '-CodexHome', $layout.Config,
+            '-BackupRoot', $recoveryBackup
+        )
+
+        Assert-True ($recovery.ExitCode -ne 0)
+        Assert-True ($recovery.Output.Contains('JSON root must be an object')) `
+            "Unexpected installer error: $($recovery.Output)"
+        Assert-False (Test-Path -LiteralPath $recoveryBackup)
+        Assert-True (Test-Path -LiteralPath $previous -PathType Container)
+        Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($journalPath))) `
+            $journalBefore
+        Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($liveSkillPath))) `
+            $liveBefore
+    }
+
     It 'keeps the existing skill and cleans the non-discoverable transaction when incoming copy fails' {
         $layout = New-InstallLayout 'transaction-copy-failure'
         New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
@@ -728,13 +845,11 @@ Describe 'scripts/install.ps1' {
             -InitializeRouting | Out-String
 
         Assert-PendingInitialIndexState -ConfigRoot $layout.Config -TargetAgent 'codex'
-        Assert-True ($output.Contains('process the request before returning to ordinary work'))
-        Assert-True ($output.Contains('next fresh session'))
+        Assert-True ($output.Contains('must not interrupt or take priority over ordinary work'))
+        Assert-True ($output.Contains('current user explicitly asks to initialize or resume routing'))
         Assert-False ($output.Contains('Starting the codex'))
         Assert-False (Test-Path -LiteralPath (Join-Path $layout.Skill 'state'))
-        $global = [IO.File]::ReadAllText($layout.Global)
-        Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
-        Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
+        Assert-False (Test-Path -LiteralPath $layout.Global)
         Assert-False (Test-Path -LiteralPath (
             Join-TestPath $layout.Config @('skills', 'tool-index')
         ))
@@ -784,30 +899,21 @@ Describe 'scripts/install.ps1' {
         Assert-False (Test-Path -LiteralPath $layout.Global)
     }
 
-    It 'rejects initialization when an unmanaged onboarding section cannot poll state' {
+    It 'initializes without requiring or changing an onboarding gate' {
         $layout = New-InstallLayout 'unmanaged-onboarding-initialization'
         New-Item -ItemType Directory -Path $layout.Config -Force | Out-Null
+        $originalGlobal = "## Tool Onboarding Gate`n`nCustom unmanaged instructions.`n"
         [IO.File]::WriteAllText(
             $layout.Global,
-            "## Tool Onboarding Gate`n`nCustom unmanaged instructions.`n"
+            $originalGlobal
         )
 
-        $threw = $false
-        try {
-            $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
-                -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
-        } catch {
-            $threw = $true
-            $errorMessage = $_.Exception.Message
-        }
+        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -InitializeRouting
 
-        Assert-True $threw
-        Assert-True ($errorMessage.Contains('requires a managed Tool Onboarding Gate'))
-        Assert-False (Test-Path -LiteralPath $layout.Skill)
-        Assert-False (Test-Path -LiteralPath (
-            Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
-        ))
-        Assert-False (Test-Path -LiteralPath $layout.Backup)
+        Assert-True (Test-Path -LiteralPath $layout.Skill)
+        Assert-PendingInitialIndexState -ConfigRoot $layout.Config -TargetAgent 'codex'
+        Assert-Equal ([IO.File]::ReadAllText($layout.Global)) $originalGlobal
     }
 
     It 'preserves a resumable initial-index request across architecture refresh' {
@@ -852,10 +958,12 @@ Describe 'scripts/install.ps1' {
             $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
             New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force | Out-Null
             $request = [ordered]@{
-                schema_version = 1
+                schema_version = 2
                 request_id = [guid]::NewGuid().ToString('N')
                 status = 'pending'
                 target_agent = 'codex'
+                target_config_root = $layout.Config
+                mutation_scope = 'target-agent-config-only'
                 project_version = $projectVersion
                 runtime_mode = 'auto-discovery'
                 scope = 'registered-capabilities'
@@ -883,6 +991,300 @@ Describe 'scripts/install.ps1' {
         }
     }
 
+    It 'rejects legacy or cross-config initial-index state before writes' {
+        $cases = @(
+            [pscustomobject]@{
+                Name = 'legacy-v1'
+                SchemaVersion = 1
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+            },
+            [pscustomobject]@{
+                Name = 'cross-config'
+                SchemaVersion = 2
+                ConfigRootKind = 'other'
+                MutationScope = 'target-agent-config-only'
+            },
+            [pscustomobject]@{
+                Name = 'cross-scope'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'all-agent-configs'
+            },
+            [pscustomobject]@{
+                Name = 'config-root-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'array'
+                MutationScope = 'target-agent-config-only'
+            },
+            [pscustomobject]@{
+                Name = 'top-level-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                TopLevelArray = $true
+            },
+            [pscustomobject]@{
+                Name = 'mutation-scope-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = @('target-agent-config-only')
+            },
+            [pscustomobject]@{
+                Name = 'schema-string'
+                SchemaVersion = '2'
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+            },
+            [pscustomobject]@{
+                Name = 'status-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'status'
+            },
+            [pscustomobject]@{
+                Name = 'target-agent-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'target_agent'
+            },
+            [pscustomobject]@{
+                Name = 'request-id-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'request_id'
+            },
+            [pscustomobject]@{
+                Name = 'project-version-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'project_version'
+            },
+            [pscustomobject]@{
+                Name = 'runtime-mode-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'runtime_mode'
+            },
+            [pscustomobject]@{
+                Name = 'scope-array'
+                SchemaVersion = 2
+                ConfigRootKind = 'current'
+                MutationScope = 'target-agent-config-only'
+                ScalarField = 'scope'
+            }
+        )
+
+        foreach ($case in $cases) {
+            $layout = New-InstallLayout ("invalid-index-scope-" + $case.Name)
+            $statePath = Join-TestPath $layout.Config @('tool-routing-state', 'initial-index.json')
+            New-Item -ItemType Directory -Path (Split-Path -Parent $statePath) -Force | Out-Null
+            $targetConfigRoot = switch ($case.ConfigRootKind) {
+                'current' { $layout.Config }
+                'other' { Join-Path $layout.Root 'other-config' }
+                'array' { ,@($layout.Config) }
+                default { throw "Unknown test config-root kind: $($case.ConfigRootKind)" }
+            }
+            $request = [ordered]@{
+                schema_version = $case.SchemaVersion
+                request_id = [guid]::NewGuid().ToString('N')
+                status = 'pending'
+                target_agent = 'codex'
+                target_config_root = $targetConfigRoot
+                mutation_scope = $case.MutationScope
+                project_version = $projectVersion
+                runtime_mode = 'auto-discovery'
+                scope = 'registered-capabilities'
+                completed_phases = @()
+                unresolved_a_tools = @()
+            }
+            if ($null -ne $case.PSObject.Properties['ScalarField']) {
+                $field = [string]$case.ScalarField
+                $request[$field] = ,@($request[$field])
+            }
+            $requestJson = $request | ConvertTo-Json -Depth 4
+            $stateText = if ($null -ne $case.PSObject.Properties['TopLevelArray']) {
+                "[`n$requestJson`n]`n"
+            } else {
+                $requestJson + "`n"
+            }
+            [IO.File]::WriteAllText(
+                $statePath,
+                $stateText,
+                (New-Object Text.UTF8Encoding $false)
+            )
+            $before = [Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))
+
+            $threw = $false
+            try {
+                $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
+                    -CodexHome $layout.Config -BackupRoot $layout.Backup
+            } catch {
+                $threw = $true
+                $errorMessage = $_.Exception.Message
+            }
+
+            Assert-True $threw
+            Assert-True ($errorMessage.Contains('metadata is invalid'))
+            Assert-False (Test-Path -LiteralPath $layout.Backup)
+            Assert-False (Test-Path -LiteralPath $layout.Skill)
+            Assert-False (Test-Path -LiteralPath $layout.Global)
+            Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath))) $before
+        }
+
+        $multi = New-InstallLayout 'invalid-index-multi-target'
+        $codexRoot = Join-Path $multi.Root 'codex-config'
+        $claudeRoot = Join-Path $multi.Root 'claude-config'
+        $zcodeRoot = Join-Path $multi.Root 'zcode-config'
+        $codexSkill = Join-TestPath $codexRoot @('skills', 'tool-use-architecture')
+        $transactionContainer = Get-SkillTransactionContainer -SkillPath $codexSkill
+        $retainedTransaction = Join-Path $transactionContainer `
+            ('txn-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $retainedTransaction -Force | Out-Null
+
+        $claudeState = Join-TestPath $claudeRoot @('tool-routing-state', 'initial-index.json')
+        New-Item -ItemType Directory -Path (Split-Path -Parent $claudeState) -Force | Out-Null
+        $legacyRequest = [ordered]@{
+            schema_version = 1
+            request_id = [guid]::NewGuid().ToString('N')
+            status = 'pending'
+            target_agent = 'claude'
+            project_version = $projectVersion
+            runtime_mode = 'auto-discovery'
+            scope = 'registered-capabilities'
+            completed_phases = @()
+            unresolved_a_tools = @()
+        }
+        [IO.File]::WriteAllText(
+            $claudeState,
+            (($legacyRequest | ConvertTo-Json -Depth 4) + "`n"),
+            (New-Object Text.UTF8Encoding $false)
+        )
+        $legacyBefore = [Convert]::ToBase64String([IO.File]::ReadAllBytes($claudeState))
+
+        $threw = $false
+        try {
+            $null = & $installer -Target all -UserProfile $multi.Profile -AllowCustomProfile `
+                -CodexHome $codexRoot -ClaudeConfigDir $claudeRoot -ZcodeHome $zcodeRoot `
+                -BackupRoot $multi.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('metadata is invalid'))
+        Assert-True (Test-Path -LiteralPath $retainedTransaction -PathType Container)
+        Assert-Equal ([Convert]::ToBase64String([IO.File]::ReadAllBytes($claudeState))) `
+            $legacyBefore
+        Assert-False (Test-Path -LiteralPath $multi.Backup)
+        Assert-False (Test-Path -LiteralPath $codexSkill)
+        Assert-False (Test-Path -LiteralPath (Join-Path $codexRoot 'AGENTS.md'))
+        Assert-False (Test-Path -LiteralPath (
+            Join-TestPath $claudeRoot @('skills', 'tool-routing-architecture')
+        ))
+        Assert-False (Test-Path -LiteralPath (Join-Path $claudeRoot 'CLAUDE.md'))
+        Assert-False (Test-Path -LiteralPath $zcodeRoot)
+    }
+
+    It 'preflights every target and retained transaction before recovery writes' {
+        $multi = New-InstallLayout 'recovery-preflight-all-targets'
+        $codexRoot = Join-Path $multi.Root 'codex-config'
+        $claudeRoot = Join-Path $multi.Root 'claude-config'
+        $zcodeRoot = Join-Path $multi.Root 'zcode-config'
+        $null = New-ToolIndexDependency $codexRoot
+        $codexSkill = Join-TestPath $codexRoot @('skills', 'tool-use-architecture')
+        $transactionContainer = Get-SkillTransactionContainer -SkillPath $codexSkill
+        $retainedTransaction = Join-Path $transactionContainer `
+            ('txn-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $retainedTransaction -Force | Out-Null
+
+        $threw = $false
+        try {
+            $null = & $installer -Target all -UserProfile $multi.Profile -AllowCustomProfile `
+                -CodexHome $codexRoot -ClaudeConfigDir $claudeRoot -ZcodeHome $zcodeRoot `
+                -BackupRoot $multi.Backup -AddRuntimeRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('requires tool-index'))
+        Assert-True (Test-Path -LiteralPath $retainedTransaction -PathType Container)
+        Assert-False (Test-Path -LiteralPath $multi.Backup)
+        Assert-False (Test-Path -LiteralPath $codexSkill)
+        Assert-False (Test-Path -LiteralPath (Join-Path $codexRoot 'AGENTS.md'))
+        Assert-False (Test-Path -LiteralPath $zcodeRoot)
+
+        $multiple = New-InstallLayout 'multiple-retained-transactions'
+        $container = Get-SkillTransactionContainer -SkillPath $multiple.Skill
+        $first = Join-Path $container ('txn-' + [guid]::NewGuid().ToString('N'))
+        $second = Join-Path $container ('txn-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $first -Force | Out-Null
+        New-Item -ItemType Directory -Path $second -Force | Out-Null
+
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $multiple.Profile `
+                -AllowCustomProfile -CodexHome $multiple.Config `
+                -BackupRoot $multiple.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('Multiple retained skill transactions'))
+        Assert-True (Test-Path -LiteralPath $first -PathType Container)
+        Assert-True (Test-Path -LiteralPath $second -PathType Container)
+        Assert-False (Test-Path -LiteralPath $multiple.Backup)
+        Assert-False (Test-Path -LiteralPath $multiple.Skill)
+
+        $crossTarget = New-InstallLayout 'cross-target-retained-preflight'
+        $crossCodexRoot = Join-Path $crossTarget.Root 'codex-config'
+        $crossClaudeRoot = Join-Path $crossTarget.Root 'claude-config'
+        $crossZcodeRoot = Join-Path $crossTarget.Root 'zcode-config'
+        $crossCodexSkill = Join-TestPath $crossCodexRoot @('skills', 'tool-use-architecture')
+        $crossClaudeSkill = Join-TestPath $crossClaudeRoot @(
+            'skills', 'tool-routing-architecture'
+        )
+        $codexContainer = Get-SkillTransactionContainer -SkillPath $crossCodexSkill
+        $claudeContainer = Get-SkillTransactionContainer -SkillPath $crossClaudeSkill
+        $codexTransaction = Join-Path $codexContainer `
+            ('txn-' + [guid]::NewGuid().ToString('N'))
+        $claudeTransaction = Join-Path $claudeContainer `
+            ('txn-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $codexTransaction -Force | Out-Null
+        New-Item -ItemType Directory -Path $claudeTransaction -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $claudeTransaction 'unexpected.txt'), 'keep')
+
+        $threw = $false
+        try {
+            $null = & $installer -Target all -UserProfile $crossTarget.Profile `
+                -AllowCustomProfile -CodexHome $crossCodexRoot `
+                -ClaudeConfigDir $crossClaudeRoot -ZcodeHome $crossZcodeRoot `
+                -BackupRoot $crossTarget.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('has data but no journal'))
+        Assert-True (Test-Path -LiteralPath $codexTransaction -PathType Container)
+        Assert-True (Test-Path -LiteralPath $claudeTransaction -PathType Container)
+        Assert-False (Test-Path -LiteralPath $crossTarget.Backup)
+        Assert-False (Test-Path -LiteralPath $crossCodexSkill)
+        Assert-False (Test-Path -LiteralPath $crossClaudeSkill)
+        Assert-False (Test-Path -LiteralPath $crossZcodeRoot)
+    }
+
     It 'preflights a missing runtime dependency before any target or backup change' {
         $layout = New-InstallLayout 'runtime-preflight'
         New-Item -ItemType Directory -Path $layout.Skill -Force | Out-Null
@@ -907,17 +1309,23 @@ Describe 'scripts/install.ps1' {
         Assert-False (Test-Path -LiteralPath $layout.Backup)
     }
 
-    It 'treats AddGlobalRules as onboarding plus runtime after dependency preflight' {
+    It 'rejects AddGlobalRules before target or backup writes' {
         $layout = New-InstallLayout 'legacy-switch'
-        $null = New-ToolIndexDependency $layout.Config
 
-        $null = & $installer -Target codex -UserProfile $layout.Profile -AllowCustomProfile `
-            -CodexHome $layout.Config -BackupRoot $layout.Backup -AddGlobalRules
+        $threw = $false
+        try {
+            $null = & $installer -Target codex -UserProfile $layout.Profile `
+                -AllowCustomProfile -CodexHome $layout.Config `
+                -BackupRoot $layout.Backup -AddGlobalRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
 
-        $global = [IO.File]::ReadAllText($layout.Global)
-        Assert-True ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
-        Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
-        Assert-False ($global.Contains('<!-- agent-tool-routing-skill:start -->'))
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('-AddGlobalRules is no longer accepted'))
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
     }
 
     It 'migrates a legacy managed block without losing surrounding user text' {
@@ -1840,31 +2248,91 @@ Describe 'scripts/install-remote.ps1' {
         $script:CreatedTestRoots.Clear()
     }
 
-    It 'installs the verified Codex payload and cleans remote staging' {
-        $layout = New-InstallLayout 'remote-codex'
+    It 'rejects a missing target before staging or target writes' {
+        $layout = New-InstallLayout 'remote-missing-target'
+        $threw = $false
 
-        $null = & $remoteInstaller -Target codex -SourceRoot $repoRoot `
-            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
-            -CodexHome $layout.Config -BackupRoot $layout.Backup
+        try {
+            $null = & $remoteInstaller -SourceRoot $repoRoot `
+                -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+                -CodexHome $layout.Config -BackupRoot $layout.Backup
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
 
-        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) `
-            $projectVersion
-        Assert-True ([IO.File]::ReadAllText($layout.Global).Contains('Tool Onboarding Gate'))
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('-Target is required'))
+        Assert-False (Test-Path -LiteralPath $layout.Config)
+        Assert-False (Test-Path -LiteralPath $layout.Backup)
         Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
             $_.Name -like 'agent-tool-routing-*'
         }).Count 0
     }
 
+    It 'installs only the verified Codex payload without global rules by default' {
+        $fixture = New-CurrentRemoteFixture 'remote-codex-source'
+        $bootstrap = $fixture.Installer
+        $layout = New-InstallLayout 'remote-codex'
+        $claudeRoot = Join-Path $layout.Root 'claude-config'
+        $zcodeRoot = Join-Path $layout.Root 'zcode-config'
+
+        $null = & $bootstrap -Target codex -SourceRoot $fixture.SourceRoot `
+            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -ClaudeConfigDir $claudeRoot -ZcodeHome $zcodeRoot `
+            -BackupRoot $layout.Backup
+
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $layout.Skill 'VERSION')).Trim()) `
+            $projectVersion
+        Assert-False (Test-Path -LiteralPath $layout.Global)
+        Assert-False (Test-Path -LiteralPath $claudeRoot)
+        Assert-False (Test-Path -LiteralPath $zcodeRoot)
+        Assert-Equal @(Get-ChildItem -LiteralPath $layout.Root -Directory | Where-Object {
+            $_.Name -like 'agent-tool-routing-*'
+        }).Count 0
+    }
+
+    It 'writes onboarding only when explicitly requested and rejects conflicting switches' {
+        $fixture = New-CurrentRemoteFixture 'remote-onboarding-source'
+        $bootstrap = $fixture.Installer
+        $layout = New-InstallLayout 'remote-onboarding'
+
+        $null = & $bootstrap -Target codex -SourceRoot $fixture.SourceRoot `
+            -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
+            -CodexHome $layout.Config -BackupRoot $layout.Backup -AddOnboardingRules
+
+        Assert-True ([IO.File]::ReadAllText($layout.Global).Contains('Tool Onboarding Gate'))
+
+        $conflict = New-InstallLayout 'remote-onboarding-conflict'
+        $threw = $false
+        try {
+            $null = & $bootstrap -Target codex -SourceRoot $fixture.SourceRoot `
+                -StagingParent $conflict.Root -UserProfile $conflict.Profile -AllowCustomProfile `
+                -CodexHome $conflict.Config -BackupRoot $conflict.Backup `
+                -AddOnboardingRules -SkipOnboardingRules
+        } catch {
+            $threw = $true
+            $errorMessage = $_.Exception.Message
+        }
+
+        Assert-True $threw
+        Assert-True ($errorMessage.Contains('cannot be combined'))
+        Assert-False (Test-Path -LiteralPath $conflict.Config)
+        Assert-False (Test-Path -LiteralPath $conflict.Backup)
+    }
+
     It 'queues routing initialization for all targets' {
+        $fixture = New-CurrentRemoteFixture 'remote-initialize-routing-source'
+        $bootstrap = $fixture.Installer
         $layout = New-InstallLayout 'remote-initialize-routing'
         $codexRoot = Join-Path $layout.Root 'codex-config'
         $claudeRoot = Join-Path $layout.Root 'claude-config'
         $zcodeRoot = Join-Path $layout.Root 'zcode-config'
 
-        $null = & $remoteInstaller -Target all -SourceRoot $repoRoot `
+        $output = & $bootstrap -Target all -SourceRoot $fixture.SourceRoot `
             -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
             -CodexHome $codexRoot -ClaudeConfigDir $claudeRoot -ZcodeHome $zcodeRoot `
-            -BackupRoot $layout.Backup -InitializeRouting
+            -BackupRoot $layout.Backup -InitializeRouting | Out-String
 
         $targets = @(
             [pscustomobject]@{
@@ -1887,50 +2355,64 @@ Describe 'scripts/install-remote.ps1' {
             }
         )
         foreach ($target in $targets) {
+            Assert-True (Test-Path -LiteralPath $target.Skill)
             Assert-PendingInitialIndexState -ConfigRoot $target.Root -TargetAgent $target.Name
-            $global = [IO.File]::ReadAllText($target.Global)
-            Assert-True ($global.Contains('<!-- agent-tool-routing-skill:onboarding:start -->'))
-            Assert-False ($global.Contains('<!-- agent-tool-routing-skill:runtime:start -->'))
+            Assert-False (Test-Path -LiteralPath $target.Global)
             Assert-False (Test-Path -LiteralPath (
                 Join-TestPath $target.Root @('skills', 'tool-index')
             ))
         }
+        Assert-True ($output.Contains('must not interrupt or take priority over ordinary work'))
     }
 
     It 'forwards Claude Code and zcode targets without installing other agents' {
+        $fixture = New-CurrentRemoteFixture 'remote-forward-source'
+        $bootstrap = $fixture.Installer
         foreach ($agent in @('claude', 'zcode')) {
             $layout = New-InstallLayout ("remote-$agent")
-            $config = Join-Path $layout.Root "$agent-config"
+            $codexRoot = Join-Path $layout.Root 'codex-config'
+            $claudeRoot = Join-Path $layout.Root 'claude-config'
+            $zcodeRoot = Join-Path $layout.Root 'zcode-config'
             $arguments = @{
                 Target = $agent
-                SourceRoot = $repoRoot
+                SourceRoot = $fixture.SourceRoot
                 StagingParent = $layout.Root
                 UserProfile = $layout.Profile
                 AllowCustomProfile = $true
                 BackupRoot = $layout.Backup
+                CodexHome = $codexRoot
+                ClaudeConfigDir = $claudeRoot
+                ZcodeHome = $zcodeRoot
             }
             if ($agent -eq 'claude') {
-                $arguments.Add('ClaudeConfigDir', $config)
-                $globalFile = Join-Path $config 'CLAUDE.md'
+                $config = $claudeRoot
+                $unselectedRoots = @($codexRoot, $zcodeRoot)
+                $globalFile = Join-Path $claudeRoot 'CLAUDE.md'
             } else {
-                $arguments.Add('ZcodeHome', $config)
-                $globalFile = Join-Path $config 'AGENTS.md'
+                $config = $zcodeRoot
+                $unselectedRoots = @($codexRoot, $claudeRoot)
+                $globalFile = Join-Path $zcodeRoot 'AGENTS.md'
             }
 
-            $null = & $remoteInstaller @arguments
+            $null = & $bootstrap @arguments
 
             $skill = Join-TestPath $config @('skills', 'tool-routing-architecture')
             Assert-Equal ([IO.File]::ReadAllText((Join-Path $skill 'VERSION')).Trim()) `
                 $projectVersion
-            Assert-True ([IO.File]::ReadAllText($globalFile).Contains('Tool Onboarding Gate'))
+            Assert-False (Test-Path -LiteralPath $globalFile)
             Assert-False (Test-Path -LiteralPath (Join-Path $config 'skills/tool-use-architecture'))
+            foreach ($unselectedRoot in $unselectedRoots) {
+                Assert-False (Test-Path -LiteralPath $unselectedRoot)
+            }
         }
     }
 
     It 'performs verification but no target writes in remote WhatIf mode' {
+        $fixture = New-CurrentRemoteFixture 'remote-what-if-source'
+        $bootstrap = $fixture.Installer
         $layout = New-InstallLayout 'remote-what-if'
 
-        $null = & $remoteInstaller -Target all -SourceRoot $repoRoot `
+        $null = & $bootstrap -Target all -SourceRoot $fixture.SourceRoot `
             -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
             -CodexHome (Join-Path $layout.Root 'codex') `
             -ClaudeConfigDir (Join-Path $layout.Root 'claude') `
@@ -1946,14 +2428,16 @@ Describe 'scripts/install-remote.ps1' {
     }
 
     It 'rejects a modified payload before creating any target or backup' {
-        $source = New-RemoteSourceFixture 'remote-payload-tamper'
+        $fixture = New-CurrentRemoteFixture 'remote-payload-tamper'
+        $bootstrap = $fixture.Installer
+        $source = $fixture.SourceRoot
         $layout = New-InstallLayout 'remote-payload-target'
         [IO.File]::AppendAllText((Join-Path $source 'SKILL.md'), "`ntampered`n")
         $threw = $false
         $errorMessage = $null
 
         try {
-            $null = & $remoteInstaller -Target codex -SourceRoot $source `
+            $null = & $bootstrap -Target codex -SourceRoot $source `
                 -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
                 -CodexHome $layout.Config -BackupRoot $layout.Backup
         } catch {
@@ -1971,7 +2455,9 @@ Describe 'scripts/install-remote.ps1' {
     }
 
     It 'rejects a modified manifest before reading payload files' {
-        $source = New-RemoteSourceFixture 'remote-manifest-tamper'
+        $fixture = New-CurrentRemoteFixture 'remote-manifest-tamper'
+        $bootstrap = $fixture.Installer
+        $source = $fixture.SourceRoot
         $layout = New-InstallLayout 'remote-manifest-target'
         [IO.File]::AppendAllText(
             (Join-TestPath $source @('scripts', 'install-manifest.json')),
@@ -1981,7 +2467,7 @@ Describe 'scripts/install-remote.ps1' {
         $errorMessage = $null
 
         try {
-            $null = & $remoteInstaller -Target codex -SourceRoot $source `
+            $null = & $bootstrap -Target codex -SourceRoot $source `
                 -StagingParent $layout.Root -UserProfile $layout.Profile -AllowCustomProfile `
                 -CodexHome $layout.Config -BackupRoot $layout.Backup
         } catch {

@@ -29,6 +29,10 @@ class ManagedOffboardingContractTests(unittest.TestCase):
             (ROOT / "examples/AGENTS.md.snippet").read_bytes(),
             (ROOT / "examples/CLAUDE.md.snippet").read_bytes(),
         )
+        self.assertIn("opt-in gate delegates", normalized("SKILL.md"))
+        self.assertIn(
+            "After lifecycle activation", normalized("references/lifecycle.md")
+        )
 
     def test_user_does_not_have_to_enumerate_dependent_cleanup(self) -> None:
         skill = normalized("SKILL.md")
@@ -146,8 +150,14 @@ class ManagedOffboardingContractTests(unittest.TestCase):
 
         self.assertIn("delete Example Crawler", english)
         self.assertIn("complete managed offboarding", english)
+        self.assertIn("When `-AddOnboardingRules` installs the opt-in gate", english)
+        self.assertIn("Without the opt-in gate", english)
+        self.assertIn("Explicitly invoke the architecture skill", english)
         self.assertIn("Example Crawler", chinese)
         self.assertIn("inventory tombstone", chinese)
+        self.assertIn("使用 `-AddOnboardingRules` 安装可选门禁后", chinese)
+        self.assertIn("如果没有安装这个可选门禁", chinese)
+        self.assertIn("必须显式调用架构 Skill", chinese)
 
 
 if __name__ == "__main__":

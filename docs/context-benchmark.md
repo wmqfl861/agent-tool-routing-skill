@@ -41,9 +41,9 @@ document chains:
 
 | Synthetic path | Documents | Metadata bytes | Body bytes | Total bytes |
 | --- | ---: | ---: | ---: | ---: |
-| Eager all documents, unsupported anti-pattern | 41 | `12,011` | `98,695` | `110,706` |
-| Strict-progressive A | 3 | `355` | `6,821` | `7,176` |
-| Strict-progressive B | 2 | `355` | `4,313` | `4,668` |
+| Eager all documents, unsupported anti-pattern | 41 | `11,916` | `98,901` | `110,817` |
+| Strict-progressive A | 3 | `260` | `7,027` | `7,287` |
+| Strict-progressive B | 2 | `260` | `4,519` | `4,779` |
 | Auto-discovery A | 1 | `275` | `2,508` | `2,783` |
 | Auto-discovery B | 1 | `357` | `2,018` | `2,375` |
 | C bypass | 0 | `0` | `0` | `0` |

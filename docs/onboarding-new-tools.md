@@ -30,22 +30,25 @@ authenticate an account, change a model/provider, purchase quota, publish
 content, or write to an external system. Obtain authorization for those actions
 from the current user or an existing higher-priority policy.
 
-## Queued Initial Index After Installation
+## Optional Queued Initial Index
 
-The quick-install commands use `-InitializeRouting` as explicit authorization
+Quick-install commands install only the explicitly selected Agent skill. They
+do not queue indexing or add global rules. Use `-InitializeRouting` separately
 to queue one initial inventory, public-source research, local Skill work, and
-routing update for the selected Agent. The verified core installer creates a
-durable `pending` request before any indexing begins, or preserves an existing
+routing update for that selected Agent. The verified installer creates a
+durable `pending` request before any indexing begins, or preserves a matching
 resumable request as part of the same locked install and rollback operation. It
-does not inventory capabilities, search for or download Skills, author guides, build
-routes, or launch another Agent process.
+does not inventory capabilities, search for or download Skills, author guides,
+build routes, or launch another Agent process.
 
-When an Agent invokes installation, it must continue the pending job before
-ordinary work. A direct terminal install leaves the request for the target
-Agent's next fresh session. Do not assume a running Agent can hot-reload the new
-architecture or global rules or finish indexing in the installation session.
-Only the Agent that consumes the request publishes phase progress; the
-installer reports installation and queue status only.
+The pending job is inert until the current user explicitly asks the recorded
+target Agent to initialize or resume it. It must not take over an unrelated
+task. Validate `target_agent`, `target_config_root`, and the single-Agent
+mutation scope before discovery, and reject any attempt to inspect or modify
+another Agent configuration root. Do not assume a running Agent can hot-reload
+the new architecture. Only the Agent consuming the explicitly resumed request
+publishes phase progress; the installer reports installation and queue status
+only.
 
 The index covers enabled capabilities registered with or discoverable by the
 target Agent. Depending on what the runtime exposes, this can include MCP

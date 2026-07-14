@@ -1,4 +1,4 @@
 interface:
   display_name: "Tool Routing Architecture"
-  short_description: "Manage tool indexing, intent routes, and safe offboarding."
-  default_prompt: "Use $tool-routing-architecture to build validated A/B routes, retain C exclusions, and complete managed offboarding from concise tool-removal requests."
+  short_description: "Explicitly manage the tool-routing architecture itself."
+  default_prompt: "Use $tool-routing-architecture only for my explicit request to design, install, initialize, resume, audit, modify, repair, or remove the routing architecture itself; otherwise return to the active workflow without rerouting it."

@@ -6,35 +6,35 @@
       "instances": 1,
       "layer": 0,
       "path": "examples/tool-index.SKILL.md",
-      "sha256": "3274ec0843416a976c8abd08f0392659bac29cf7e8fdf9d2ce39d51d73e581e4",
+      "sha256": "39105780b22ff30e60029a8c6d09b35109024783a55b7864efefbfd99c36230f",
       "single_instance": {
         "body": {
-          "unicode_codepoints": 2295,
-          "utf8_bytes": 2295
+          "unicode_codepoints": 2501,
+          "utf8_bytes": 2501
         },
         "documents": 1,
         "metadata": {
-          "unicode_codepoints": 355,
-          "utf8_bytes": 355
+          "unicode_codepoints": 260,
+          "utf8_bytes": 260
         },
         "total": {
-          "unicode_codepoints": 2650,
-          "utf8_bytes": 2650
+          "unicode_codepoints": 2761,
+          "utf8_bytes": 2761
         }
       },
       "synthetic_all_instances": {
         "body": {
-          "unicode_codepoints": 2295,
-          "utf8_bytes": 2295
+          "unicode_codepoints": 2501,
+          "utf8_bytes": 2501
         },
         "documents": 1,
         "metadata": {
-          "unicode_codepoints": 355,
-          "utf8_bytes": 355
+          "unicode_codepoints": 260,
+          "utf8_bytes": 260
         },
         "total": {
-          "unicode_codepoints": 2650,
-          "utf8_bytes": 2650
+          "unicode_codepoints": 2761,
+          "utf8_bytes": 2761
         }
       }
     },
@@ -148,16 +148,16 @@
       "mode": "auto-discovery",
       "reduction_vs_synthetic_eager_all_documents": {
         "body": {
-          "unicode_codepoints": 0.974588,
-          "utf8_bytes": 0.974588
+          "unicode_codepoints": 0.974641,
+          "utf8_bytes": 0.974641
         },
         "metadata": {
-          "unicode_codepoints": 0.977104,
-          "utf8_bytes": 0.977104
+          "unicode_codepoints": 0.976922,
+          "utf8_bytes": 0.976922
         },
         "total": {
-          "unicode_codepoints": 0.974861,
-          "utf8_bytes": 0.974861
+          "unicode_codepoints": 0.974887,
+          "utf8_bytes": 0.974887
         }
       },
       "selected_instances": {
@@ -188,16 +188,16 @@
       "mode": "auto-discovery",
       "reduction_vs_synthetic_eager_all_documents": {
         "body": {
-          "unicode_codepoints": 0.979553,
-          "utf8_bytes": 0.979553
+          "unicode_codepoints": 0.979596,
+          "utf8_bytes": 0.979596
         },
         "metadata": {
-          "unicode_codepoints": 0.970277,
-          "utf8_bytes": 0.970277
+          "unicode_codepoints": 0.97004,
+          "utf8_bytes": 0.97004
         },
         "total": {
-          "unicode_codepoints": 0.978547,
-          "utf8_bytes": 0.978547
+          "unicode_codepoints": 0.978568,
+          "utf8_bytes": 0.978568
         }
       },
       "selected_instances": {
@@ -248,32 +248,32 @@
       "intent_type": "A",
       "loaded": {
         "body": {
-          "unicode_codepoints": 6821,
-          "utf8_bytes": 6821
+          "unicode_codepoints": 7027,
+          "utf8_bytes": 7027
         },
         "documents": 3,
         "metadata": {
-          "unicode_codepoints": 355,
-          "utf8_bytes": 355
+          "unicode_codepoints": 260,
+          "utf8_bytes": 260
         },
         "total": {
-          "unicode_codepoints": 7176,
-          "utf8_bytes": 7176
+          "unicode_codepoints": 7287,
+          "utf8_bytes": 7287
         }
       },
       "mode": "strict-progressive",
       "reduction_vs_synthetic_eager_all_documents": {
         "body": {
-          "unicode_codepoints": 0.930888,
-          "utf8_bytes": 0.930888
+          "unicode_codepoints": 0.928949,
+          "utf8_bytes": 0.928949
         },
         "metadata": {
-          "unicode_codepoints": 0.970444,
-          "utf8_bytes": 0.970444
+          "unicode_codepoints": 0.978181,
+          "utf8_bytes": 0.978181
         },
         "total": {
-          "unicode_codepoints": 0.93518,
-          "utf8_bytes": 0.93518
+          "unicode_codepoints": 0.934243,
+          "utf8_bytes": 0.934243
         }
       },
       "selected_instances": {
@@ -290,32 +290,32 @@
       "intent_type": "B",
       "loaded": {
         "body": {
-          "unicode_codepoints": 4313,
-          "utf8_bytes": 4313
+          "unicode_codepoints": 4519,
+          "utf8_bytes": 4519
         },
         "documents": 2,
         "metadata": {
-          "unicode_codepoints": 355,
-          "utf8_bytes": 355
+          "unicode_codepoints": 260,
+          "utf8_bytes": 260
         },
         "total": {
-          "unicode_codepoints": 4668,
-          "utf8_bytes": 4668
+          "unicode_codepoints": 4779,
+          "utf8_bytes": 4779
         }
       },
       "mode": "strict-progressive",
       "reduction_vs_synthetic_eager_all_documents": {
         "body": {
-          "unicode_codepoints": 0.9563,
-          "utf8_bytes": 0.9563
+          "unicode_codepoints": 0.954308,
+          "utf8_bytes": 0.954308
         },
         "metadata": {
-          "unicode_codepoints": 0.970444,
-          "utf8_bytes": 0.970444
+          "unicode_codepoints": 0.978181,
+          "utf8_bytes": 0.978181
         },
         "total": {
-          "unicode_codepoints": 0.957834,
-          "utf8_bytes": 0.957834
+          "unicode_codepoints": 0.956875,
+          "utf8_bytes": 0.956875
         }
       },
       "selected_instances": {
@@ -332,17 +332,17 @@
     "label": "Synthetic anti-pattern scaling baseline",
     "loaded": {
       "body": {
-        "unicode_codepoints": 98695,
-        "utf8_bytes": 98695
+        "unicode_codepoints": 98901,
+        "utf8_bytes": 98901
       },
       "documents": 41,
       "metadata": {
-        "unicode_codepoints": 12011,
-        "utf8_bytes": 12011
+        "unicode_codepoints": 11916,
+        "utf8_bytes": 11916
       },
       "total": {
-        "unicode_codepoints": 110706,
-        "utf8_bytes": 110706
+        "unicode_codepoints": 110817,
+        "utf8_bytes": 110817
       }
     },
     "supported_mode": false

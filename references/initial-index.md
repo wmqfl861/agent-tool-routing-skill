@@ -1,12 +1,16 @@
 # Initial Tool Index
 
-Read this reference when an installation or current user request explicitly
-authorizes an initial inventory and routing build for one agent.
+Read this reference only when the current user explicitly asks the current Agent
+to initialize or resume an inventory and routing build for one bound target. A
+queued request, session start, global instruction, installer result, or another
+skill does not activate this workflow.
 
 An installer invoked with `-InitializeRouting` only queues or preserves the
 durable control request. It does not perform discovery, inventory, remote Skill
 search or download, guide authoring, route construction, or phase reporting.
-The Agent consuming the request performs the phases below.
+The request remains inert until the current user explicitly asks the matching
+Agent to initialize or resume it. Only then may that Agent perform the phases
+below.
 
 ## Contents
 
@@ -20,17 +24,29 @@ The Agent consuming the request performs the phases below.
 
 ## Authorization And Job State
 
-Open the pending request at `tool-routing-state/initial-index.json` relative to
-the effective Agent configuration root. An authorized installer may have queued
-this request; do not replace it or create a competing request for the same agent
-and configuration root. An Agent that invoked the installer consumes it before
-ordinary work. After a direct terminal install, consume it in the target
-Agent's next fresh session; do not assume same-session hot-reload. If the
-current user directly authorizes initial indexing and no request exists, create
-the request before discovery.
+Do not poll for, open, or inspect a pending request during ordinary work or at
+session start. After the current user explicitly asks this Agent to initialize
+or resume routing, open `tool-routing-state/initial-index.json` only below this
+Agent's effective configuration root. An installer may have queued it, but
+installer invocation and file existence are not current-user activation. If no
+request exists, create one only within the explicitly requested bound target.
+
+Treat `target_agent`, `target_config_root`, and `mutation_scope` as one
+indivisible authorization tuple. `target_agent` must equal the current Agent;
+`target_config_root` must equal both the current canonical configuration root
+and the canonical root containing the request; and `mutation_scope` must equal
+the literal `target-agent-config-only`. The separate `scope` field limits which
+registered capabilities and authorized workspace context may be inventoried.
+Never borrow authorization from another Agent, configuration root, workspace,
+or previous request. Missing, ambiguous, stale, or mismatched tuple data leaves
+the request inert and requires a narrow current-user clarification before any
+discovery, network access, or mutation.
 
 Validate and retain its `request_id`, `target_agent`, `project_version`,
 `runtime_mode`, `scope`, `completed_phases`, and `unresolved_a_tools` fields.
+Record the canonical `target_config_root` and `mutation_scope` in the immutable
+request snapshot before discovery so later phases and resumes can revalidate the
+same tuple.
 Create a separate job directory below the effective agent configuration root
 and outside auto-discovered skill and plugin roots for detailed artifacts:
 
@@ -63,10 +79,11 @@ Stop rather than writing when containment, exclusivity, or private permissions
 cannot be established.
 
 The request must have `status: pending` before any discovery, network access, or
-routing change. Update it atomically as phases advance. In the job artifacts,
-record the effective configuration root, active workspace scope, timestamps,
-current phase, backup path, and evidence for `unresolved_a_tools`. Never record
-secrets, tokens, cookies, private content, request headers, or unredacted
+routing change, but that status does not activate or resume it. Update it
+atomically only during the explicitly authorized turn. In the job artifacts,
+record the bound target tuple, active workspace scope, timestamps, current
+phase, backup path, and evidence for `unresolved_a_tools`. Never record secrets,
+tokens, cookies, private content, request headers, or unredacted
 credential-bearing URLs.
 
 Use these states monotonically:
@@ -90,8 +107,10 @@ operations, or making external writes.
 
 ## Discovery Scope
 
-Inventory only capabilities that the target agent currently registers or
-discovers as enabled in its effective user configuration and active workspace.
+Inventory only registered and discoverable capabilities that the bound target
+Agent currently exposes as enabled in its exact effective user configuration
+and authorized active workspace. Never inspect another Agent's root or expand
+the mutation scope because another root, plugin, skill, or workspace is visible.
 Include, when exposed by that runtime:
 
 - enabled MCP servers and their advertised capabilities;
@@ -118,10 +137,10 @@ MCP operation, or enable a plugin merely to enrich the inventory.
 
 ## Progress Phases
 
-Only the Agent consuming the pending job publishes concise progress updates and
-mirrors them in `progress.json`. The installer reports installation and queue
-status, not these phases. Use stable phase counts so terminal and conversational
-clients can display the same state:
+Only the explicitly authorized Agent whose target tuple matches publishes
+concise progress updates and mirrors them in `progress.json`. The installer
+reports installation and queue status, not these phases. Use stable phase counts
+so terminal and conversational clients can display the same state:
 
 1. Discover effective configuration and skill roots.
 2. Inventory enabled registered and discoverable capabilities.
@@ -273,7 +292,11 @@ an A capability remains unresolved, set the request to `blocked` or
 `needs-input`, leave the new runtime tree inactive, report exactly what is
 missing, and return to normal conversation without calling that capability.
 
-On resume, revalidate effective roots, enabled state, source pins, staged
-artifacts, backups, canonical inventory id/revision/digest, and inventory drift.
-Repeat only phases invalidated by new evidence; do not redo verified remote work
-or overwrite newer user changes.
+Every resume requires a new explicit current-user instruction for the same
+`target_agent`, `target_config_root`, and `mutation_scope`. Revalidate that tuple,
+effective roots, enabled state, source pins, staged artifacts, backups,
+canonical inventory id/revision/digest, and inventory drift. A blocked,
+`needs-input`, or failed request never self-resumes. Repeat only phases
+invalidated by new evidence; do not redo verified remote work or overwrite newer
+user changes. Return to the user's normal conversation when the explicitly
+requested turn completes or stops.

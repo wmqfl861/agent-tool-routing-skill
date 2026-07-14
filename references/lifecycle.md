@@ -12,10 +12,11 @@ enable, authenticate, reconfigure, update, or replace it. Preserve existing
 disabled state and model, provider, endpoint, account, and plugin settings
 unless the user explicitly includes them.
 
-A current-user request to remove, delete, or uninstall a named or otherwise
-unambiguously identified capability is explicit authorization for its complete
-managed offboarding in the effective target-Agent scope. Do not ask the user to
-separately authorize removal of that capability's active routes, eligible
+After lifecycle activation by explicit architecture invocation or the opt-in
+onboarding gate, a current-user request to remove, delete, or uninstall a named
+or otherwise unambiguously identified capability is explicit authorization for
+its complete managed offboarding in the effective target-Agent scope. Do not
+ask the user to separately authorize removal of that capability's active routes, eligible
 zero-reference managed guide, inventory pointers, managed global-rule
 references, or dangling aliases and documentation. Ask only when identity or
 Agent scope is ambiguous, or when a proposed deletion would cross the named
@@ -120,9 +121,10 @@ and state how the user can resume remediation later.
 
 ## Removal And Replacement
 
-Treat a concise current-user request such as `remove Example Crawler`,
-`uninstall Example Crawler`, or `delete Example Crawler` as the authorization
-for this entire workflow. Do not require the user to append "and clean its
+After lifecycle activation, treat a concise current-user request such as
+`remove Example Crawler`, `uninstall Example Crawler`, or
+`delete Example Crawler` as the authorization for this entire workflow. Do not
+require the user to append "and clean its
 Skill, inventory, and routes." If the name resolves to several installed
 capabilities or Agent scopes, ask only the minimum disambiguating question, then
 continue the workflow without a second authorization prompt.

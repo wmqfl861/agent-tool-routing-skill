@@ -4,11 +4,12 @@ Codex installs this repository under the compatibility name
 `tool-use-architecture`. The installer converts both skill metadata and global
 rule references automatically.
 
-## Install, Onboard, and Queue Routing Initialization
+## Install for One Agent
 
-Choose the one command for your platform. It is pinned to `v0.2.2`, verifies
-the bootstrap and every payload file before execution, and can run from any
-directory without Git.
+Choose the one command for your platform. It is pinned to `v0.2.3`, verifies
+the bootstrap and every payload file before execution, and installs only the
+Codex architecture skill. It does not change Claude Code or zcode, add global
+rules, or queue routing initialization.
 
 The Windows command targets Windows 10 1803+, Windows Server 2019+, or another
 supported Windows release that provides `curl.exe`.
@@ -16,30 +17,27 @@ supported Windows release that provides `curl.exe`.
 ### Windows
 
 ```powershell
-$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.2/scripts/install-remote.ps1';$h='8622efd1b36f5ecee70d585cde66f956b03fe798765192fb9d68284dfd1b6001';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex -InitializeRouting}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
+$u='https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.3/scripts/install-remote.ps1';$h='4ffc0ae2428096d9eeffa1a8293a1dcd1a1c3bccb14a513850634d5d2c42ce8e';$p=Join-Path ([IO.Path]::GetTempPath()) ('agent-tool-routing-'+[guid]::NewGuid().ToString('N')+'.ps1');try{& curl.exe -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL $u -o $p;if($LASTEXITCODE -ne 0){throw 'Installer download failed.'};if((Get-Item -LiteralPath $p).Length -gt 131072){throw 'Installer exceeds the maximum expected size.'};if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() -ne $h){throw 'Installer SHA-256 verification failed.'};& ([scriptblock]::Create([IO.File]::ReadAllText($p))) -Target codex}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}
 ```
 
 ### Linux
 
 ```bash
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.2/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '8622efd1b36f5ecee70d585cde66f956b03fe798765192fb9d68284dfd1b6001' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.3/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '4ffc0ae2428096d9eeffa1a8293a1dcd1a1c3bccb14a513850634d5d2c42ce8e' "$p" | sha256sum -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
 ```
 
 ### macOS
 
 ```zsh
-(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.2/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '8622efd1b36f5ecee70d585cde66f956b03fe798765192fb9d68284dfd1b6001' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex -InitializeRouting)
+(set -eu;umask 077;d="$(mktemp -d)";p="$d/install.ps1";trap 'rm -f "$p";rmdir "$d"' EXIT;curl -q --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 30 --max-time 60 --limit-rate 128K --max-filesize 131072 -fsSL 'https://raw.githubusercontent.com/wmqfl861/agent-tool-routing-skill/v0.2.3/scripts/install-remote.ps1' -o "$p";printf '%s  %s\n' '4ffc0ae2428096d9eeffa1a8293a1dcd1a1c3bccb14a513850634d5d2c42ce8e' "$p" | shasum -a 256 -c - >/dev/null;pwsh -NoProfile -File "$p" -Target codex)
 ```
 
-After the verified core install, `-InitializeRouting` transactionally queues a
-durable one-shot request or preserves an existing resumable request. The
-installer does not inventory capabilities, search or download Skills, author
-guides, build routes, emit indexing phase progress, or launch another Codex
-process. A Codex session that invoked the installer must continue the pending
-job before ordinary work; after a direct terminal install, the next fresh Codex
-session consumes it. A running session is not guaranteed to hot-reload new
-skills or global instructions or complete indexing in the installation
-session. Only the Codex session consuming the job emits phase progress.
+`-Target` is required, and only explicit `-Target all` may change multiple
+Agents. Add `-AddOnboardingRules` only when a Codex global lifecycle gate is
+intended. Add `-InitializeRouting` only to queue a durable one-shot request.
+That request is bound to the recorded Codex configuration root and remains
+inert until the current user explicitly asks a fresh Codex session to initialize
+or resume routing. It must not interrupt another task.
 
 The consuming Agent inventories capabilities registered with or discoverable by
 Codex, not every executable on `PATH`. It routes resolved A and B capabilities
@@ -110,9 +108,9 @@ pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -AddRuntimeRules
 ```
 
 The installer preflights `skills/tool-index/SKILL.md` before changing anything.
-`-AddGlobalRules` is a compatibility alias for onboarding plus runtime rules,
-so it performs the same preflight. Combining old and new switches takes their
-union and is not an error.
+`-AddGlobalRules` is no longer accepted because one switch must not enable two
+independent global rule sets. Use `-AddOnboardingRules` and/or
+`-AddRuntimeRules` explicitly.
 
 ## Backup and Rollback
 
@@ -178,7 +176,7 @@ Use the verified one-command installer or a reviewed local checkout instead of
 reconstructing the installed directory manually:
 
 ```powershell
-pwsh -NoProfile -File ./scripts/install.ps1 -Target codex -InitializeRouting
+pwsh -NoProfile -File ./scripts/install.ps1 -Target codex
 ```
 
 The transactional installer includes `VERSION`, `SKILL.md`, `agents/`, all
@@ -199,12 +197,18 @@ $codexHome = if ($env:CODEX_HOME) {
   Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex'
 }
 $skill = Join-Path $codexHome 'skills/tool-use-architecture/SKILL.md'
-$global = Join-Path $codexHome 'AGENTS.md'
-
 Test-Path -LiteralPath $skill
 Select-String -LiteralPath $skill -Pattern '^name: tool-use-architecture$'
+```
+
+Only after installing with `-AddOnboardingRules`, validate the optional global
+gate:
+
+```powershell
+$global = Join-Path $codexHome 'AGENTS.md'
+Test-Path -LiteralPath $global
 Select-String -LiteralPath $global -Pattern 'Tool Onboarding Gate'
-Select-String -LiteralPath $global -Pattern 'read `tool-use-architecture`'
+Select-String -LiteralPath $global -Pattern 'delegates a direct current-user request'
 ```
 
 After runtime activation, also check for `Tool Directory Routing`. Start a new
@@ -213,7 +217,8 @@ Codex session so skill metadata and global instructions are reloaded.
 Test onboarding with:
 
 ```text
-Use $tool-use-architecture to classify a newly installed Firecrawl MCP server.
+Use $tool-use-architecture to audit how the installed Firecrawl MCP server
+should be represented in this Agent's routing architecture.
 ```
 
 The architecture may choose a route, but it must not install, authenticate,

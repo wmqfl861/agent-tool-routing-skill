@@ -1,10 +1,9 @@
 ---
 name: tool-index
 description: >
-  Resolve ambiguity between specialized tool families when no category or tool
-  has already been selected. Use as the sole entry point for all specialized
-  routes only in an explicitly configured strict-progressive installation. Do
-  not use for primitives, obvious auto-discovery matches, or selected workflows.
+  Resolve ambiguity between specialized tool families only when no category or
+  tool has already been selected. Do not use for primitives, obvious
+  auto-discovery matches, explicit tool choices, or selected workflows.
 ---
 
 # Tool Index
@@ -13,6 +12,10 @@ Use this directory only to choose a user-intent category. It never selects or
 calls a concrete tool. This example assumes the default `auto-discovery` mode;
 rewrite paths and broaden discovery metadata when packaging Layer 1 and Layer 2
 as references for `strict-progressive` mode.
+
+If this directory is loaded after a category, tool, skill, or primitive workflow
+has already been selected, return to that workflow immediately without
+reclassifying the request or choosing a replacement.
 
 ## Categories
 

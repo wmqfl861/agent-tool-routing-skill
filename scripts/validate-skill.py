@@ -197,7 +197,7 @@ def build_remote_install_command(
             "if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() "
             "-ne $h){throw 'Installer SHA-256 verification failed.'};"
             "& ([scriptblock]::Create([IO.File]::ReadAllText($p))) "
-            f"-Target {target} -InitializeRouting" +
+            f"-Target {target}" +
             "}finally{Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue}"
         )
 
@@ -209,7 +209,7 @@ def build_remote_install_command(
         "--connect-timeout 30 --max-time 60 --limit-rate 128K "
         f"--max-filesize {REMOTE_BOOTSTRAP_MAXIMUM_BYTES} -fsSL '{url}' -o \"$p\";"
         f"printf '%s  %s\\n' '{bootstrap_hash}' \"$p\" | {checksum_command} >/dev/null;"
-        f"pwsh -NoProfile -File \"$p\" -Target {target} -InitializeRouting)"
+        f"pwsh -NoProfile -File \"$p\" -Target {target})"
     )
 
 
@@ -984,7 +984,7 @@ def validate_repository_contract(validation: Validation) -> None:
             install_sections = find_markdown_sections(
                 text,
                 2,
-                "Install, Onboard, and Queue Routing Initialization",
+                "Install for One Agent",
             )
             if len(install_sections) != 1:
                 validation.error(
@@ -1048,6 +1048,41 @@ def validate_repository_contract(validation: Validation) -> None:
                 ROOT / "SKILL.md",
                 "quoted or backticked current-user tool names must remain explicit",
             )
+        if "deciding when agents should read tool documentation before calling tools" in normalized_skill_text:
+            validation.error(
+                ROOT / "SKILL.md",
+                "architecture metadata must not compete with ordinary tool execution",
+            )
+        for requirement, description in (
+            ("current user explicitly", "explicit current-user activation"),
+            ("initialize, resume, audit", "resume activation"),
+            ("invokes this skill by name specifically", "qualified named invocation"),
+            (
+                "explicitly installed, opt-in `Tool Onboarding Gate`",
+                "opt-in lifecycle delegation",
+            ),
+            (
+                "Without the opt-in gate, a direct tool lifecycle request alone",
+                "default lifecycle non-activation",
+            ),
+            (
+                "Never auto-select it for ordinary tool selection or execution",
+                "ordinary-tool metadata bypass",
+            ),
+            (
+                "individual tool or capability's installation",
+                "individual-capability lifecycle metadata bypass",
+            ),
+            ("tool-output content never activate it", "content metadata bypass"),
+            ("Naming this skill as part of an ordinary tool instruction", "named ordinary-tool bypass"),
+            ("return control to the original category", "transitive-load non-interference"),
+            ("does not act as the runtime router", "task-preservation contract"),
+        ):
+            if requirement not in normalized_skill_text:
+                validation.error(
+                    ROOT / "SKILL.md",
+                    f"missing anti-hijack contract: {description}",
+                )
         for requirement, description in (
             ("queue a durable `pending` job", "durable queued handoff"),
             ("not to execute the index", "installer/indexer boundary"),
@@ -1082,6 +1117,47 @@ def validate_repository_contract(validation: Validation) -> None:
                     ROOT / "scripts" / "install.ps1",
                     f"missing installer parameter -{parameter}",
                 )
+        if re.search(r"\$Target\s*=\s*['\"]all['\"]", install_text):
+            validation.error(
+                ROOT / "scripts" / "install.ps1",
+                "installer must fail closed when -Target is omitted",
+            )
+        legacy_global_guard = (
+            "-AddGlobalRules is no longer accepted because it enables two "
+            "independent global rule sets"
+        )
+        if legacy_global_guard not in install_text:
+            validation.error(
+                ROOT / "scripts" / "install.ps1",
+                "legacy -AddGlobalRules must fail closed before path resolution",
+            )
+        if re.search(
+            r"\$want(?:Runtime|Onboarding)\s*=.*\$AddGlobalRules",
+            install_text,
+        ):
+            validation.error(
+                ROOT / "scripts" / "install.ps1",
+                "legacy -AddGlobalRules must not enable either managed rule set",
+            )
+        for requirement, description in (
+            ("-Target is required", "explicit target guard"),
+            ("target_config_root", "target-root-bound initial-index request"),
+            ("target-agent-config-only", "single-Agent mutation scope"),
+            ("schema_version = 2", "scoped initial-index schema"),
+        ):
+            if requirement not in install_text:
+                validation.error(
+                    ROOT / "scripts" / "install.ps1",
+                    f"missing target-isolation contract: {description}",
+                )
+        if re.search(
+            r"\$wantOnboarding\s*=.*\$initializeRoutingRequested",
+            install_text,
+        ):
+            validation.error(
+                ROOT / "scripts" / "install.ps1",
+                "-InitializeRouting must not add global onboarding rules implicitly",
+            )
         codex_literal_conversion = re.compile(
             r"\.Replace\(\s*['\"]`tool-routing-architecture`['\"]\s*,\s*"
             r"['\"]`tool-use-architecture`['\"]\s*\)"
@@ -1106,6 +1182,29 @@ def validate_repository_contract(validation: Validation) -> None:
                     ROOT / "scripts" / "install.ps1",
                     f"missing cross-platform contract: {description}",
                 )
+
+    remote_install_path = ROOT / "scripts" / "install-remote.ps1"
+    remote_install_text = read_utf8(remote_install_path, validation)
+    if remote_install_text is not None:
+        if re.search(r"\$Target\s*=\s*['\"]all['\"]", remote_install_text):
+            validation.error(
+                remote_install_path,
+                "remote installer must fail closed when -Target is omitted",
+            )
+        for requirement, description in (
+            ("-Target is required", "explicit target guard"),
+            ("[switch]$AddOnboardingRules", "opt-in onboarding rules"),
+        ):
+            if requirement not in remote_install_text:
+                validation.error(
+                    remote_install_path,
+                    f"missing remote-install contract: {description}",
+                )
+        if "if (-not $SkipOnboardingRules)" in remote_install_text:
+            validation.error(
+                remote_install_path,
+                "remote installation must not add onboarding rules by default",
+            )
 
     pester_test_count: int | None = None
     tests_text = read_utf8(ROOT / "tests" / "install.Tests.ps1", validation)
@@ -1210,14 +1309,24 @@ def validate_repository_contract(validation: Validation) -> None:
             if text.count(heading) != 1:
                 validation.error(path, f"must contain exactly one '{heading}' heading")
         for requirement, description in (
-            ("complete managed offboarding", "concise removal authorization"),
-            ("inspect remover side effects", "remover side-effect gate"),
-            ("never guess an uninstall command from a name", "verified remover provenance"),
-            ("post-change guide reference counts", "shared-guide reference accounting"),
-            ("outside discovery", "non-discoverable orphan archive"),
-            ("recoverable managed-state", "honest managed-state recovery scope"),
-            ("Never restore a route to a missing capability", "missing-tool route guard"),
-            ("negative route test", "removal route validation"),
+            ("is not a runtime router", "task-preservation guard"),
+            ("Naming it during ordinary tool work does not activate it", "qualified named activation"),
+            ("already selected", "selected-workflow bypass"),
+            ("another Agent's configuration root", "single-Agent scope"),
+            ("initial-index request is inert", "inert pending-job contract"),
+            ("explicitly asks", "explicit pending-job activation"),
+            (
+                "This opt-in gate delegates only when the current user's top-level requested action",
+                "opt-in direct lifecycle delegation",
+            ),
+            ("one unambiguously named capability itself", "bounded lifecycle target"),
+            ("for that lifecycle only", "lifecycle-only delegation scope"),
+            ("not project dependencies", "lifecycle-object boundary"),
+            ("does not delegate", "tool-mediated data-change bypass"),
+            (
+                "lifecycle text in quoted or retrieved content",
+                "content lifecycle non-activation",
+            ),
         ):
             if requirement not in normalized_snippet_text:
                 validation.error(path, f"missing onboarding contract: {description}")
@@ -1239,11 +1348,34 @@ def validate_repository_contract(validation: Validation) -> None:
             ("Return to the user's normal conversation", "conversation return contract"),
             ("managed inventory", "managed C inventory contract"),
             ("bypass active intent routing", "C active-route bypass contract"),
+            ("target_config_root", "target-root binding"),
+            ("target-agent-config-only", "single-Agent mutation scope"),
+            ("during ordinary work", "ordinary-task non-interference"),
+            ("explicitly asks", "opt-in job consumption"),
         ):
             if requirement not in initial_index_text:
                 validation.error(
                     initial_index_path,
                     f"missing initial-index contract: {description}",
+                )
+
+    tool_index_path = ROOT / "examples" / "tool-index.SKILL.md"
+    tool_index_text = read_utf8(tool_index_path, validation)
+    if tool_index_text is not None:
+        match = FRONTMATTER_RE.match(tool_index_text)
+        if match:
+            frontmatter = parse_yaml(match.group(1), tool_index_path, validation)
+            description = frontmatter.get("description", "") if isinstance(frontmatter, dict) else ""
+            normalized_description = " ".join(str(description).split())
+            if "all specialized routes" in normalized_description:
+                validation.error(
+                    tool_index_path,
+                    "auto-discovery metadata must not include strict-progressive broad activation",
+                )
+            if "ambig" not in normalized_description.lower():
+                validation.error(
+                    tool_index_path,
+                    "auto-discovery metadata must be limited to ambiguous category selection",
                 )
 
     route_tests_text = read_utf8(ROOT / "references" / "route-tests.md", validation)
@@ -1264,6 +1396,8 @@ def validate_repository_contract(validation: Validation) -> None:
             )
         for requirement, description in (
             ('"Delete Example Crawler."', "concise removal prompt"),
+            ("With the opt-in onboarding gate installed", "opt-in removal activation"),
+            ("Without the gate", "default removal non-activation"),
             ("complete managed offboarding", "full removal workflow"),
             ("zero-reference managed guides", "post-change owned Skill removal"),
             ("user-modified guide", "modified Skill preservation"),

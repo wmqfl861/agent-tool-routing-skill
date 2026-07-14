@@ -1,7 +1,7 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
     [ValidateSet('all', 'codex', 'claude', 'zcode')]
-    [string]$Target = 'all',
+    [string]$Target,
 
     [switch]$AddGlobalRules,
 
@@ -28,6 +28,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($Target)) {
+    throw "-Target is required. Choose one of: codex, claude, zcode, or all."
+}
+if ($AddGlobalRules) {
+    throw "-AddGlobalRules is no longer accepted because it enables two independent global rule sets. Use -AddOnboardingRules and/or -AddRuntimeRules explicitly."
+}
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $VersionSource = Join-Path $RepoRoot 'VERSION'
@@ -1109,9 +1115,16 @@ function Get-ExistingInitialIndexRequest {
         if ($requestText.Length -gt 0 -and $requestText[0] -eq [char]0xFEFF) {
             throw 'BOM is not allowed.'
         }
-        $request = $requestText | ConvertFrom-Json -ErrorAction Stop
     } catch {
         throw "Initial routing request must be UTF-8 JSON without BOM: $($Config.IndexRequest)"
+    }
+    if ($requestText -notmatch '^\s*\{') {
+        throw "Initial routing request metadata is invalid: JSON root must be an object: $($Config.IndexRequest)"
+    }
+    try {
+        $request = $requestText | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "Initial routing request must be valid JSON: $($Config.IndexRequest)"
     }
 
     $allowedStatuses = @(
@@ -1132,6 +1145,8 @@ function Get-ExistingInitialIndexRequest {
         'request_id',
         'status',
         'target_agent',
+        'target_config_root',
+        'mutation_scope',
         'project_version',
         'runtime_mode',
         'scope',
@@ -1145,9 +1160,51 @@ function Get-ExistingInitialIndexRequest {
         (@($request.completed_phases | Where-Object { $_ -isnot [string] }).Count -eq 0)
     $unresolvedToolsAreStrings = ($request.unresolved_a_tools -is [Collections.IList]) -and
         (@($request.unresolved_a_tools | Where-Object { $_ -isnot [string] }).Count -eq 0)
+    $schemaVersionIsInteger = ($request.schema_version -is [int]) -or
+        ($request.schema_version -is [long])
+    $statusIsString = $request.status -is [string]
+    $requestIdIsString = $request.request_id -is [string]
+    $targetAgentIsString = $request.target_agent -is [string]
+    $targetConfigRootIsString = $request.target_config_root -is [string]
+    $mutationScopeIsString = $request.mutation_scope -is [string]
+    $projectVersionIsString = $request.project_version -is [string]
+    $runtimeModeIsString = $request.runtime_mode -is [string]
+    $scopeIsString = $request.scope -is [string]
+    $targetConfigRootMatches = $false
+    if ($targetConfigRootIsString -and
+        (-not [string]::IsNullOrWhiteSpace([string]$request.target_config_root))) {
+        try {
+            $targetConfigRootMatches = [string]::Equals(
+                (Get-ComparisonPath -Path ([string]$request.target_config_root)),
+                (Get-ComparisonPath -Path $Config.ConfigRoot),
+                $PathComparison
+            )
+        } catch {
+            $targetConfigRootMatches = $false
+        }
+    }
     if ($missingProperty -or
-        ($request.schema_version -ne 1) -or
-        ([string]$request.target_agent -ne $Config.Name) -or
+        (-not $schemaVersionIsInteger) -or
+        ($request.schema_version -ne 2) -or
+        (-not $statusIsString) -or
+        (-not $requestIdIsString) -or
+        (-not $targetAgentIsString) -or
+        (-not [string]::Equals(
+            [string]$request.target_agent,
+            $Config.Name,
+            [StringComparison]::Ordinal
+        )) -or
+        (-not $targetConfigRootIsString) -or
+        (-not $targetConfigRootMatches) -or
+        (-not $mutationScopeIsString) -or
+        (-not [string]::Equals(
+            [string]$request.mutation_scope,
+            'target-agent-config-only',
+            [StringComparison]::Ordinal
+        )) -or
+        (-not $projectVersionIsString) -or
+        (-not $runtimeModeIsString) -or
+        (-not $scopeIsString) -or
         ([string]$request.scope -ne 'registered-capabilities') -or
         ([string]$request.request_id -notmatch '^[0-9a-f]{32}$') -or
         ([string]$request.project_version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') -or
@@ -1165,10 +1222,12 @@ function New-InitialIndexRequestText {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     $request = [ordered]@{
-        schema_version = 1
+        schema_version = 2
         request_id = [guid]::NewGuid().ToString('N')
         status = 'pending'
         target_agent = $Config.Name
+        target_config_root = $Config.ConfigRoot
+        mutation_scope = 'target-agent-config-only'
         project_version = $ProjectVersion
         runtime_mode = 'auto-discovery'
         scope = 'registered-capabilities'
@@ -1600,9 +1659,16 @@ function Read-StrictTransactionJson {
         if (($text.Length -gt 0) -and ($text[0] -eq [char]0xFEFF)) {
             throw 'BOM is not allowed.'
         }
-        return $text | ConvertFrom-Json -ErrorAction Stop
     } catch {
         throw "${Purpose} must be UTF-8 JSON without BOM: $Path. $($_.Exception.Message)"
+    }
+    if ($text -notmatch '^\s*\{') {
+        throw "${Purpose} JSON root must be an object: $Path"
+    }
+    try {
+        return $text | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "${Purpose} must contain valid JSON: $Path. $($_.Exception.Message)"
     }
 }
 
@@ -1895,7 +1961,10 @@ function Assert-OrdinaryTransactionDirectory {
 }
 
 function Recover-SkillTransactions {
-    param([Parameter(Mandatory = $true)][string]$Destination)
+    param(
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [switch]$ValidateOnly
+    )
 
     $destinationFull = Normalize-RootPath -Path $Destination
     $skillRoot = Split-Path -Parent $destinationFull
@@ -1917,7 +1986,15 @@ function Recover-SkillTransactions {
     }
     Assert-NoReparsePointTree -Path $container -Purpose 'retained skill transaction recovery'
 
-    foreach ($transactionItem in @(Get-ChildItem -LiteralPath $container -Force -ErrorAction Stop | Sort-Object Name)) {
+    $transactionItems = @(
+        Get-ChildItem -LiteralPath $container -Force -ErrorAction Stop |
+            Sort-Object Name
+    )
+    if ($transactionItems.Count -gt 1) {
+        throw "Multiple retained skill transactions require manual review before recovery: $container"
+    }
+
+    foreach ($transactionItem in $transactionItems) {
         if ((Test-IsFileSystemLink -Item $transactionItem) -or (-not $transactionItem.PSIsContainer)) {
             throw "Unexpected direct entry in skill transaction container '$container': $($transactionItem.FullName). No transaction was recovered."
         }
@@ -1926,7 +2003,9 @@ function Recover-SkillTransactions {
         $journalPath = Join-Path $transactionRoot 'transaction.json'
         if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
             if ($entries.Count -eq 0) {
-                Remove-Item -LiteralPath $transactionRoot -Force -ErrorAction Stop
+                if (-not $ValidateOnly) {
+                    Remove-Item -LiteralPath $transactionRoot -Force -ErrorAction Stop
+                }
                 continue
             }
             throw "Retained skill transaction has data but no journal: $transactionRoot. Inspect it manually before retrying."
@@ -1956,19 +2035,30 @@ function Recover-SkillTransactions {
                 throw "Retained transaction '$transactionRoot' moved previous data without a valid prepared-tree manifest and incoming-prepared phase. Recovery stopped without changing live or previous data."
             }
             if (-not $hasLive) {
-                Move-Item -LiteralPath $previousPath -Destination $destinationFull -ErrorAction Stop
+                if ($phases.Contains('live-committed')) {
+                    throw "Retained transaction '$transactionRoot' records a committed live skill, but live is missing. Recovery stopped without moving previous data."
+                }
+                if (-not $ValidateOnly) {
+                    Move-Item -LiteralPath $previousPath -Destination $destinationFull -ErrorAction Stop
+                }
                 $hasLive = $true
                 $hasPrevious = $false
-                Write-Warning "Recovered the previous skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+                if (-not $ValidateOnly) {
+                    Write-Warning "Recovered the previous skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+                }
             } elseif ($hasIncoming) {
                 throw "Retained transaction '$transactionRoot' has live, previous, and incoming skill directories. Recovery is ambiguous; inspect these paths manually before retrying."
             } else {
                 Assert-PreparedTreeMatches -Expected $preparedTree `
                     -ActualRoot $destinationFull -TransactionRoot $transactionRoot
                 $verifiedCommittedLive = $true
-                Remove-Item -LiteralPath $previousPath -Recurse -Force -ErrorAction Stop
+                if (-not $ValidateOnly) {
+                    Remove-Item -LiteralPath $previousPath -Recurse -Force -ErrorAction Stop
+                }
                 $hasPrevious = $false
-                Write-Warning "Finalized the committed skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+                if (-not $ValidateOnly) {
+                    Write-Warning "Finalized the committed skill at '$destinationFull' from interrupted transaction '$transactionRoot'."
+                }
             }
         }
 
@@ -1985,10 +2075,14 @@ function Recover-SkillTransactions {
         }
 
         Assert-NoReparsePointTree -Path $transactionRoot -Purpose 'recovered skill transaction cleanup'
-        Remove-Item -LiteralPath $transactionRoot -Recurse -Force -ErrorAction Stop
+        if (-not $ValidateOnly) {
+            Remove-Item -LiteralPath $transactionRoot -Recurse -Force -ErrorAction Stop
+        }
     }
 
-    Remove-EmptySkillTransactionContainer -Path $container
+    if (-not $ValidateOnly) {
+        Remove-EmptySkillTransactionContainer -Path $container
+    }
 }
 
 function New-SkillTransaction {
@@ -2345,13 +2439,22 @@ if (-not [string]::Equals($UserProfileFull, $OsUserProfileFull, $PathComparison)
     Write-Warning "Using custom profile root for installation defaults: $UserProfileFull"
 }
 
-$CodexHomeFull = Get-ConfiguredRoot -ExplicitValue $CodexHome -EnvironmentName 'CODEX_HOME' -Fallback (Join-Path $UserProfileFull '.codex')
-$ClaudeConfigDirFull = Get-ConfiguredRoot -ExplicitValue $ClaudeConfigDir -EnvironmentName 'CLAUDE_CONFIG_DIR' -Fallback (Join-Path $UserProfileFull '.claude')
-$ZcodeHomeFull = Get-ConfiguredRoot -ExplicitValue $ZcodeHome -EnvironmentName 'ZCODE_HOME' -Fallback (Join-Path $UserProfileFull '.zcode')
-$initializeRoutingRequested = [bool]$InitializeRouting
-$wantRuntime = [bool]($AddRuntimeRules -or $AddGlobalRules)
-$wantOnboarding = [bool]($AddOnboardingRules -or $AddGlobalRules -or $initializeRoutingRequested)
 $targetNames = if ($Target -eq 'all') { @('codex', 'claude', 'zcode') } else { @($Target) }
+$CodexHomeFull = if ($targetNames -contains 'codex') {
+    Get-ConfiguredRoot -ExplicitValue $CodexHome -EnvironmentName 'CODEX_HOME' `
+        -Fallback (Join-Path $UserProfileFull '.codex')
+} else { $null }
+$ClaudeConfigDirFull = if ($targetNames -contains 'claude') {
+    Get-ConfiguredRoot -ExplicitValue $ClaudeConfigDir -EnvironmentName 'CLAUDE_CONFIG_DIR' `
+        -Fallback (Join-Path $UserProfileFull '.claude')
+} else { $null }
+$ZcodeHomeFull = if ($targetNames -contains 'zcode') {
+    Get-ConfiguredRoot -ExplicitValue $ZcodeHome -EnvironmentName 'ZCODE_HOME' `
+        -Fallback (Join-Path $UserProfileFull '.zcode')
+} else { $null }
+$initializeRoutingRequested = [bool]$InitializeRouting
+$wantRuntime = [bool]$AddRuntimeRules
+$wantOnboarding = [bool]$AddOnboardingRules
 $configs = @($targetNames | ForEach-Object { Get-AgentConfig -Agent $_ })
 $plans = New-Object System.Collections.Generic.List[object]
 $agentInstallLocks = @(Enter-AgentInstallLocks -Configs $configs)
@@ -2371,8 +2474,8 @@ try {
         return
     }
 
-# Hold every config-root lock while recovering retained transactions, planning,
-# installing, and performing any automatic rollback.
+# Validate every selected Agent's state before retained transaction recovery can
+# mutate any target. Hold every config-root lock through the remaining work.
 foreach ($config in $configs) {
     foreach ($targetPath in @($config.SkillDir, $config.GlobalFile, $config.RuntimeDependency, $config.IndexRequest)) {
         if (-not (Test-PathContained -Parent $config.ConfigRoot -Child $targetPath)) {
@@ -2380,8 +2483,6 @@ foreach ($config in $configs) {
         }
     }
     Assert-NoExistingReparsePoint -Path $config.ConfigRoot -Purpose "$($config.Name) config access"
-    Recover-SkillTransactions -Destination $config.SkillDir
-    Assert-NoReparsePointTree -Path $config.SkillDir -Purpose "$($config.Name) skill installation"
     Assert-NoExistingReparsePoint -Path $config.IndexRequest -Purpose "$($config.Name) initial routing state"
     $existingIndexRequest = Get-ExistingInitialIndexRequest -Config $config
     $config | Add-Member -NotePropertyName ExistingIndexRequestBase64 -NotePropertyValue $existingIndexRequest
@@ -2392,6 +2493,10 @@ foreach ($config in $configs) {
         $null
     }
     $config | Add-Member -NotePropertyName NewIndexRequestText -NotePropertyValue $newIndexRequestText
+}
+
+foreach ($config in $configs) {
+    Assert-NoReparsePointTree -Path $config.SkillDir -Purpose "$($config.Name) skill installation"
     if ($wantRuntime -or $wantOnboarding) {
         Assert-NoExistingReparsePoint -Path $config.GlobalFile -Purpose "$($config.Name) global rule installation"
         if (-not (Test-Path -LiteralPath $config.Snippet -PathType Leaf)) {
@@ -2400,9 +2505,6 @@ foreach ($config in $configs) {
         $globalPlan = New-GlobalFilePlan -Config $config -WantRuntime $wantRuntime -WantOnboarding $wantOnboarding
         if ($globalPlan.WritesRuntime -and -not (Test-Path -LiteralPath $config.RuntimeDependency -PathType Leaf)) {
             throw "Runtime routing for $($config.Name) requires tool-index at '$($config.RuntimeDependency)'. The planned rules may come from an explicit runtime request or preserved legacy managed content. Install tool-index before continuing."
-        }
-        if ($initializeRoutingRequested -and -not $globalPlan.WritesOnboarding) {
-            throw "Initial routing for $($config.Name) requires a managed Tool Onboarding Gate. Remove or mark the existing unmanaged section before retrying."
         }
     } else {
         $globalPlan = [pscustomobject]@{
@@ -2479,9 +2581,6 @@ foreach ($candidate in $overlapCandidates) {
     }
 }
 
-if (-not (Test-Path -LiteralPath $backupParent)) {
-    New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
-}
 $snapshotName = 'install-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), ([guid]::NewGuid().ToString('N').Substring(0, 12))
 $snapshotRoot = Join-Path $backupParent $snapshotName
 if (Test-Path -LiteralPath $snapshotRoot) {
@@ -2490,6 +2589,21 @@ if (Test-Path -LiteralPath $snapshotRoot) {
         throw "Refusing to reuse non-empty backup snapshot: $snapshotRoot"
     }
     throw "Refusing to reuse existing backup snapshot: $snapshotRoot"
+}
+
+# Validate every retained transaction and all remaining read-only install plans
+# before any recovery mutates an Agent target.
+foreach ($config in $configs) {
+    Recover-SkillTransactions -Destination $config.SkillDir -ValidateOnly
+}
+foreach ($config in $configs) {
+    Recover-SkillTransactions -Destination $config.SkillDir
+    Assert-NoReparsePointTree -Path $config.SkillDir `
+        -Purpose "$($config.Name) recovered skill installation"
+}
+
+if (-not (Test-Path -LiteralPath $backupParent)) {
+    New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
 }
 New-Item -ItemType Directory -Path $snapshotRoot | Out-Null
 $stageRoot = Join-Path $snapshotRoot 'stage'
@@ -2783,7 +2897,7 @@ $results | Format-Table -AutoSize
 if ($initializeRoutingRequested) {
     foreach ($plan in $plans) {
         Write-Output "Initial routing request: $($plan.Config.IndexRequest)"
-        Write-Output "If an Agent invoked this installer, it should process the request before returning to ordinary work. Otherwise the target Agent will process it in its next fresh session."
+        Write-Output "This pending request must not interrupt or take priority over ordinary work. Consume it only when the current user explicitly asks to initialize or resume routing."
     }
 }
 } finally {
